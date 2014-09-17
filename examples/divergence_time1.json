@@ -1,26 +1,31 @@
 {
-"oa:annotatedBy" : {
-	"type": "prov:Entity",
-"name" : "blackrim"
-},
-"oa:annotatedAt" : "datetime",
-"oa:hasTarget" : { 
-"type":"branch" , 
-"included_ids":[99252], 
-"excluded_ids":[5296507], 
-"strict_include":false, 
-"strict_exclude":false
-},
-"oa:hasBody" : {
-"type" : "divergence time estimate", 
-"@id" : "IRI",
-"citation": "doi: 10.3732/ajb.0900346",
-"stated taxon": "Angiospermae",
-"mean age": 147 ,
-"minimum age": 141 ,
-"maximum age": 154 ,
-"age unit": "million years ago",
-"analysis type": "Bayesian divergence time analysis",
-"analysis details":  "Based on 36 minimum age constraints treated as exponential distributions."
-}
+    "@context": {
+        "name": "http://schema.org/name",
+        "prov": "http://www.w3.org/ns/prov#",
+        "oa": "http://www.w3.org/ns/oa#"
+    },
+    "@type": "oa:Annotation",
+    "oa:annotatedBy": {
+	    "@type": "prov:Entity",
+        "name": "blackrim"
+    },
+    "oa:annotatedAt" : "datetime",
+    "oa:hasTarget" : { 
+        "@type":"node" , 
+        "included_ids":[99252], 
+        "excluded_ids":[5296507], 
+        "strict":false
+    },
+    "oa:hasBody" : {
+        "@type" : "divergence time estimate", 
+        "@id" : "IRI",
+        "citation": "doi: 10.3732/ajb.0900346",
+        "stated taxon": "Angiospermae",
+        "mean age": 147 ,
+        "minimum age": 141 ,
+        "maximum age": 154 ,
+        "age unit": "million years ago",
+        "analysis type": "Bayesian divergence time analysis",
+        "analysis details":  "Based on 36 minimum age constraints treated as exponential distributions."
+    }
 }
