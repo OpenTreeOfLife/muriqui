@@ -12,18 +12,18 @@
     "oa:annotatedAt" : "datetime",
     "oa:hasTarget" : { 
         "@type":"node" , 
-        "included_ids":[99252], 
-        "excluded_ids":[5296507], 
+        "included_ids":[431495], 
+        "excluded_ids":[], 
         "strict":false
     },
     "oa:hasBody" : {
         "@type" : "divergence time estimate", 
         "@id" : "IRI",
         "citation": "doi: 10.3732/ajb.0900346",
-        "stated taxon": "Angiospermae",
-        "mean age": 147 ,
-        "minimum age": 141 ,
-        "maximum age": 154 ,
+        "stated taxon": "Eudicotyledoneae",
+        "mean age": 129 ,
+        "minimum age": 123 ,
+        "maximum age": 134 ,
         "age unit": "million years ago",
         "analysis type": "Bayesian divergence time analysis",
         "analysis details":  "Based on 36 minimum age constraints treated as exponential distributions."
