@@ -10,6 +10,14 @@ class Reason(object):
     NO_INC_DESIGNATORS_IN_TREE = 0
     SUCCESS = 1
     MRCA_HAS_EXCLUDED = 2
+    def to_str(c):
+        if c == Reason.NO_INC_DESIGNATORS_IN_TREE:
+            return 'no specifiers to be included were in the tree'
+        if c == Reason.MRCA_HAS_EXCLUDED:
+            return 'the include group is paraphyletic with respect to member/members of the exclude group'
+        return ''
+    to_str = staticmethod(to_str)
+
 def mod_encode_splits(tree, create_dict=True, delete_outdegree_one=True, internal_node_taxa=False):
     """
     Processes splits on a tree, encoding them as bitmask on each edge.
@@ -74,7 +82,7 @@ def mod_encode_splits(tree, create_dict=True, delete_outdegree_one=True, interna
         if nc > 0:
             if nc == 1 and delete_outdegree_one and edge.tail_node:
                 p = edge.tail_node
-                assert(p)
+                assert p
                 c = child_nodes[0]
                 try:
                     c.edge.length += edge.length
@@ -113,7 +121,7 @@ def debug(msg):
     sys.stderr.write('{s}: {m}\n'.format(s=SCRIPT_NAME, m=msg))
 
 def outcome(target, return_code, dropped_inc, dropped_exc):
-    return {'target': target, 
+    return {'target': target,
             'reason_code': return_code,
             'dropped_inc': dropped_inc,
             'dropped_exc': dropped_exc}
@@ -190,13 +198,8 @@ class PhyloReferencedAnnotation(object):
     def serialize(self):
         return {'descendants': self.des,
                 'excludes_ancestors_of': self.exclude_ancs_of}
-    
-if __name__ == '__main__':
-    try:
-        tree_file, annotations_file = sys.argv[1:]
-    except:
-        sys.exit('expecting 2 arguments: a tree file and a JSON file of annotations')
-    tree_list = dendropy.TreeList.get_from_path(tree_file,
+def main(tree_filename, annotations_filename):
+    tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
                                                 suppress_internal_node_taxa=False)
     for tree in tree_list:
@@ -220,7 +223,7 @@ if __name__ == '__main__':
             if node.taxon:
                 print node.taxon.label
 
-    a_f = codecs.open(annotations_file, 'rU', encoding='utf-8')
+    a_f = codecs.open(annotations_filename, 'rU', encoding='utf-8')
     annot_list = json.load(a_f)
     if not isinstance(annot_list, list):
         annot_list = [annot_list]
@@ -228,6 +231,7 @@ if __name__ == '__main__':
     for tree_index, tree in enumerate(tree_list):
         num_tried = 0
         num_added = 0
+        unadded = []
         for annot_index, annotation in enumerate(annot_list):
             a = PhyloReferencedAnnotation(annotation)
             response = add_phyloreferenced_annotation(tree, a)
@@ -235,9 +239,11 @@ if __name__ == '__main__':
             if x:
                 num_added += 1
             else:
+                unadded.append((a, response))
                 debug('Annotation {a} could not be added to tree {t}'.format(a=annot_index, t=tree_index))
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
+        # Report tree and annotations
         tree.print_plot(show_internal_node_ids=True)
         for node in tree.preorder_node_iter():
             if node.taxon:
@@ -266,4 +272,17 @@ if __name__ == '__main__':
                         print '   ', a.summary
                 else:
                     print '    <NO ANNOTATIONS>'
+        # Report unadded annotations
+        if len(unadded) > 0:
+            print 'Unattached annotations'
+        for annotation, add_record in unadded:
+            print 'reason={r}. annotation={a}'.format(a=annotation.summary,
+                                                      r=Reason.to_str(add_record['reason_code']))
 
+
+if __name__ == '__main__':
+    try:
+        tree_file, annotations_file = sys.argv[1:]
+    except:
+        sys.exit('expecting 2 arguments: a tree file and a JSON file of annotations')
+    main(tree_file, annotations_file)
