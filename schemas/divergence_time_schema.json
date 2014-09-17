@@ -1,0 +1,54 @@
+{
+"title": "divergence time estimation schema",
+"type": "object",
+"properties": {
+	"oa:hasBody" : { 
+		"type":"object",
+		"properties": {
+			"type": "divergence time estimate",
+			"citation": {
+				"description" : "citation for the divergence time should be a doi or url",
+				"type" : "string",
+				"required": true
+			},
+			"stated taxon": {
+				"description" : "the name of the focal taxon as stated in the citation",
+				"type": "string",
+				"required": false
+			},
+			"mean age" : {
+				"description": "the mean divergence time",
+				"type": "integer",
+				"required": false
+			},
+			"minimum age" : {
+				"description": "the minimum divergence time",
+				"type": "integer",
+				"required": false
+			},
+			"maximum age" : {
+				"description": "the maximum divergence time",
+				"type": "integer",
+				"required": false
+				
+			},
+			"age unit" : {
+				"description": "the units for the divergence time",
+				"type": "string",
+				"required": true
+			},
+			"analysis type" : {
+				"description": "the type of analysis used for the estimation of divergence time analysis",
+				"type": "string",
+				"required": true
+			},
+			"analysis details" : {
+				"description": "any details from the analysis that are important for understanding the divergence time",
+				"type": "string",
+				"required": false
+			}
+			
+		}
+	}
+	}
+}
