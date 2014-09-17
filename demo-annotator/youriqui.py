@@ -12,41 +12,50 @@ class Reason(object):
 
 def debug(msg):
     sys.stderr.write('{s}: {m}\n'.format(s=SCRIPT_NAME, m=msg))
+
+def outcome(target, return_code, dropped_inc, dropped_exc):
+    return {'target': target, 
+            'reason_code': return_code,
+            'dropped_inc': dropped_inc,
+            'dropped_exc': dropped_exc}
 def taxa_in_tree(tree, taxa_list):
     t = []
+    dropped = []
     for i in taxa_list:
         ind = tree.label2index.get(i)
         if ind is not None:
             t.append(tree.taxon_namespace[ind])
-    return t
+        else:
+            dropped.append(i)
+    return t, dropped
 def bits_in_tree(tree, taxa_list):
-    t = taxa_in_tree(tree, taxa_list)
-    return [tree.label2bit[i.label] for i in t]
+    t, dropped = taxa_in_tree(tree, taxa_list)
+    return [tree.label2bit[i.label] for i in t], dropped
 def add_node_based_phyloreferenced_annotation(tree, annotation):
-    return False, -1
+    return outcome(False, -1, None, None)
 def add_stem_based_phylorefenced_annotation(tree, annotation):
-    in_tree = taxa_in_tree(tree, annotation.des)
-    exclude = bits_in_tree(tree, annotation.exclude_ancs_of)
+    in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
+    exclude, dropped_ex = bits_in_tree(tree, annotation.exclude_ancs_of)
     if not exclude:
-        return tree.seed_node, Reason.SUCCESS
+        return outcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_ex)
     exc_bit_set = 0
     for e in exclude:
         exc_bit_set |= e
     if len(in_tree) == 0:
-        return False, Reason.NO_INC_DESIGNATORS_IN_TREE
+        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_ex)
     if len(in_tree) == 1:
         mrca = tree.find_node_with_taxon_label(in_tree[0].label)
-        assert mrca is not None
     else:
         mrca = tree.mrca(taxa=in_tree)
+    assert mrca is not None
     if mrca.edge.split_bitmask & exc_bit_set:
-        return False, Reason.MRCA_HAS_EXCLUDED
+        return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_ex)
     deepest_valid = mrca
     curr = mrca.parent_node
     while curr is not None and not (curr.edge.split_bitmask & exc_bit_set):
         deepest_valid = curr
         curr = curr.parent_node
-    return curr.edge, Reason.SUCCESS
+    return outcome(curr.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.exclude_ancs_of:
         return add_stem_based_phylorefenced_annotation(tree, annotation)
@@ -87,7 +96,8 @@ if __name__ == '__main__':
         num_added = 0
         for annot_index, annotation in enumerate(annot_list):
             a = PhyloReferencedAnnotation(annotation)
-            x, reason = add_phyloreferenced_annotation(tree, a)
+            response = add_phyloreferenced_annotation(tree, a)
+            x = response['target']
             if x:
                 num_added += 1
             else:
