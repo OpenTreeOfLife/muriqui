@@ -8,47 +8,37 @@
 			"type": "divergence time estimate",
 			"citation": {
 				"description" : "citation for the divergence time should be a doi or url",
-				"type" : "string",
-				"required": true
+				"type" : "string"
 			},
 			"stated taxon": {
 				"description" : "the name of the focal taxon as stated in the citation",
-				"type": "string",
-				"required": false
-			},
+				"type": "string"			},
 			"mean age" : {
 				"description": "the mean divergence time",
-				"type": "integer",
-				"required": false
+				"type": "integer"
 			},
 			"minimum age" : {
 				"description": "the minimum divergence time",
-				"type": "integer",
-				"required": false
+				"type": "integer"
 			},
 			"maximum age" : {
 				"description": "the maximum divergence time",
-				"type": "integer",
-				"required": false
-				
+				"type": "integer"
 			},
 			"age unit" : {
 				"description": "the units for the divergence time",
-				"type": "string",
-				"required": true
+				"type": "string"
 			},
 			"analysis type" : {
 				"description": "the type of analysis used for the estimation of divergence time analysis",
-				"type": "string",
-				"required": true
+				"type": "string"
 			},
 			"analysis details" : {
 				"description": "any details from the analysis that are important for understanding the divergence time",
-				"type": "string",
-				"required": false
+				"type": "string"
 			}
-			
-		}
+		},
+		"required": ["citation","mean age"]
 	}
 	}
 }
