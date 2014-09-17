@@ -32,7 +32,15 @@ def bits_in_tree(tree, taxa_list):
     t, dropped = taxa_in_tree(tree, taxa_list)
     return [tree.label2bit[i.label] for i in t], dropped
 def add_node_based_phyloreferenced_annotation(tree, annotation):
-    return outcome(False, -1, None, None)
+    in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
+    if len(in_tree) == 0:
+        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, None)
+    if len(in_tree) == 1:
+        mrca = tree.find_node_with_taxon_label(in_tree[0].label)
+    else:
+        mrca = tree.mrca(taxa=in_tree)
+    assert mrca is not None
+    return outcome(mrca, Reason.SUCCESS, None, None)
 def add_stem_based_phylorefenced_annotation(tree, annotation):
     in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
     exclude, dropped_ex = bits_in_tree(tree, annotation.exclude_ancs_of)
@@ -59,7 +67,7 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.exclude_ancs_of:
         return add_stem_based_phylorefenced_annotation(tree, annotation)
-    return add_node_based_phylorefenced_annotation(tree, annotation)
+    return add_node_based_phyloreferenced_annotation(tree, annotation)
 class PhyloReferencedAnnotation(object):
     def __init__(self, serialized):
         self.des = [str(i) for i in serialized['descendants']]
