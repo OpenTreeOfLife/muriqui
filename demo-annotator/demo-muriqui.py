@@ -139,33 +139,35 @@ def bits_in_tree(tree, taxa_list):
     t, dropped = taxa_in_tree(tree, taxa_list)
     return [tree.label2bit[i.label] for i in t], dropped
 def add_node_based_phyloreferenced_annotation(tree, annotation):
-    in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
-    if len(in_tree) == 0:
-        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, None)
-    if len(in_tree) == 1:
-        mrca = tree.find_node_with_taxon_label(in_tree[0].label)
-    else:
-        mrca = tree.mrca(taxa=in_tree)
-    assert mrca is not None
+    resp = _find_mrca_and_verify_monophyly(tree, annotation)
+    if isinstance(resp, dict):
+        return resp
+    mrca, exc_bit_set, dropped_inc, dropped_exc = resp
     return outcome(mrca, Reason.SUCCESS, None, None)
 
-def add_stem_based_phylorefenced_annotation(tree, annotation):
+def _find_mrca_and_verify_monophyly(tree, annotation):
     in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
-    exclude, dropped_ex = bits_in_tree(tree, annotation.exclude_ancs_of)
+    exclude, dropped_exc = bits_in_tree(tree, annotation.exclude_ancs_of)
     if not exclude:
-        return outcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_ex)
+        return outcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
     exc_bit_set = 0
     for e in exclude:
         exc_bit_set |= e
     if len(in_tree) == 0:
-        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_ex)
+        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_exc)
     if len(in_tree) == 1:
         mrca = tree.find_node_with_taxon_label(in_tree[0].label)
     else:
         mrca = tree.mrca(taxa=in_tree)
     assert mrca is not None
     if mrca.edge.split_bitmask & exc_bit_set:
-        return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_ex)
+        return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
+    return mrca, exc_bit_set, dropped_inc, dropped_exc
+def add_stem_based_phylorefenced_annotation(tree, annotation):
+    resp = _find_mrca_and_verify_monophyly(tree, annotation)
+    if isinstance(resp, dict):
+        return resp
+    mrca, exc_bit_set, dropped_inc, dropped_exc = resp
     deepest_valid = mrca
     curr = mrca.parent_node
     while (curr is not None) and ((curr.edge.split_bitmask & exc_bit_set) == 0):
@@ -174,7 +176,7 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
         curr = curr.parent_node
     if curr:
         print 'intersection of', curr.edge.split_bitmask, exc_bit_set
-    return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
+    return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
 
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.rooted_by == GroupType.STEM:
