@@ -179,7 +179,7 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
     return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
 
 def add_phyloreferenced_annotation(tree, annotation):
-    if annotation.rooted_by == GroupType.STEM:
+    if annotation.rooted_by == GroupType.BRANCH:
         r = add_stem_based_phylorefenced_annotation(tree, annotation)
     else:
         assert annotation.rooted_by == GroupType.NODE
@@ -190,33 +190,38 @@ def add_phyloreferenced_annotation(tree, annotation):
     return r
 
 class GroupType:
-    STEM, NODE = range(2)
+    BRANCH, NODE = range(2)
     def to_str(c):
-        if c == GroupType.STEM:
-            return 'stem'
+        if c == GroupType.BRANCH:
+            return 'branch'
         assert c == GroupType.NODE
         return 'node'
     to_str = staticmethod(to_str)
     def to_code(c):
-        if c.lower() == 'stem':
-            return GroupType.STEM
+        if c.lower() == 'branch':
+            return GroupType.BRANCH
         assert c.lower() == 'node'
         return GroupType.NODE
     to_code = staticmethod(to_code)
 
 class PhyloReferencedAnnotation(object):
     def __init__(self, serialized):
-        self.des = [str(i) for i in serialized['descendants']]
-        self.exclude_ancs_of = [str(i) for i in serialized.get('excludes_ancestors_of', [])]
-        self.rooted_by = GroupType.to_code(serialized['rooted_by'])
+        self.target = serialized['oa:hasTarget']
+        self.annotated_at = serialized['oa:annotatedAt']
+        self.annotated_by = serialized['oa:annotatedBy']
+        self.body = serialized['oa:hasBody']
+        self.des = [str(i) for i in self.target['included_ids']]
+        self.exclude_ancs_of = [str(i) for i in self.target.get('excluded_ids', [])]
+        self.rooted_by = GroupType.to_code(self.target['type'])
         self.applied_to = []
     def get_summary(self):
         return json.dumps(self.serialize())
     summary = property(get_summary)
     def serialize(self):
-        return {'descendants': self.des,
-                'excludes_ancestors_of': self.exclude_ancs_of,
-                'rooted_by': GroupType.to_str(self.rooted_by)}
+        return {'oa:hasTarget': self.target,
+                'oa:annotatedBy': self.annotated_by,
+                'oa:annotatedAt': self.annotated_at,
+                'oa:hasBody': self.body,}
 def main(tree_filename, annotations_filename):
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
