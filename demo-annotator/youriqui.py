@@ -160,10 +160,13 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
         return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_ex)
     deepest_valid = mrca
     curr = mrca.parent_node
-    while curr is not None and not (curr.edge.split_bitmask & exc_bit_set):
+    while (curr is not None) and ((curr.edge.split_bitmask & exc_bit_set) == 0):
+        print 'no intersection of', curr.edge.split_bitmask, exc_bit_set
         deepest_valid = curr
         curr = curr.parent_node
-    return outcome(curr.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
+    if curr:
+        print 'intersection of', curr.edge.split_bitmask, exc_bit_set
+    return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
 
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.exclude_ancs_of:
@@ -181,6 +184,13 @@ class PhyloReferencedAnnotation(object):
         self.des = [str(i) for i in serialized['descendants']]
         self.exclude_ancs_of = [str(i) for i in serialized.get('excludes_ancestors_of', [])]
         self.applied_to = []
+    def get_summary(self):
+        return json.dumps(self.serialize())
+    summary = property(get_summary)
+    def serialize(self):
+        return {'descendants': self.des,
+                'excludes_ancestors_of': self.exclude_ancs_of}
+    
 if __name__ == '__main__':
     try:
         tree_file, annotations_file = sys.argv[1:]
@@ -190,7 +200,7 @@ if __name__ == '__main__':
                                                 'newick',
                                                 suppress_internal_node_taxa=False)
     for tree in tree_list:
-        tree.print_plot()
+        tree.print_plot(show_internal_node_ids=True)
         mod_encode_splits(tree, delete_outdegree_one=False, internal_node_taxa=True)
         tree.label2index = {}
         tree.label2bit = {}
@@ -228,3 +238,32 @@ if __name__ == '__main__':
                 debug('Annotation {a} could not be added to tree {t}'.format(a=annot_index, t=tree_index))
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
+        tree.print_plot(show_internal_node_ids=True)
+        for node in tree.preorder_node_iter():
+            if node.taxon:
+                l = node.taxon.label
+            else:
+                l = '@' + str(id(node))
+            print 'Node "{l}":'.format(l=l)
+            if node.phylo_ref:
+                for a in node.phylo_ref:
+                    print '   ', a.summary
+            else:
+                print '    <NO ANNOTATIONS>'
+            e = node.edge
+            if e:
+                p = e.tail_node
+                if p:
+                    if p.taxon:
+                        pl = p.taxon.label
+                    else:
+                        pl = '@' + str(id(p))
+                else:
+                    pl = 'None'
+                print 'Edge "{p}" -> "{l}"'.format(p=pl, l=l)
+                if e.phylo_ref:
+                    for a in e.phylo_ref:
+                        print '   ', a.summary
+                else:
+                    print '    <NO ANNOTATIONS>'
+
