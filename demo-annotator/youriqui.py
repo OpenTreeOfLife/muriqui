@@ -41,6 +41,7 @@ def add_node_based_phyloreferenced_annotation(tree, annotation):
         mrca = tree.mrca(taxa=in_tree)
     assert mrca is not None
     return outcome(mrca, Reason.SUCCESS, None, None)
+
 def add_stem_based_phylorefenced_annotation(tree, annotation):
     in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
     exclude, dropped_ex = bits_in_tree(tree, annotation.exclude_ancs_of)
@@ -64,14 +65,23 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
         deepest_valid = curr
         curr = curr.parent_node
     return outcome(curr.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
+
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.exclude_ancs_of:
-        return add_stem_based_phylorefenced_annotation(tree, annotation)
-    return add_node_based_phyloreferenced_annotation(tree, annotation)
+        r = add_stem_based_phylorefenced_annotation(tree, annotation)
+    else:
+        r = add_node_based_phyloreferenced_annotation(tree, annotation)
+    if r['target']:
+        r['target'].phylo_ref.append(annotation)
+        annotation.applied_to.append((tree, r['target']))
+    return r
+
+
 class PhyloReferencedAnnotation(object):
     def __init__(self, serialized):
         self.des = [str(i) for i in serialized['descendants']]
         self.exclude_ancs_of = [str(i) for i in serialized.get('excludes_ancestors_of', [])]
+        self.applied_to = []
 if __name__ == '__main__':
     try:
         tree_file, annotations_file = sys.argv[1:]
@@ -92,6 +102,9 @@ if __name__ == '__main__':
             curr_bit <<= 1
 
         for node in tree.preorder_node_iter():
+            node.phylo_ref = []
+            if node.edge:
+                node.edge.phylo_ref = []
             print node.edge.split_bitmask
 
     a_f = codecs.open(annotations_file, 'rU', encoding='utf-8')
