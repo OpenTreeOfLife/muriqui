@@ -177,27 +177,44 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
     return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_ex)
 
 def add_phyloreferenced_annotation(tree, annotation):
-    if annotation.exclude_ancs_of:
+    if annotation.rooted_by == GroupType.STEM:
         r = add_stem_based_phylorefenced_annotation(tree, annotation)
     else:
+        assert annotation.rooted_by == GroupType.NODE
         r = add_node_based_phyloreferenced_annotation(tree, annotation)
     if r['target']:
         r['target'].phylo_ref.append(annotation)
         annotation.applied_to.append((tree, r['target']))
     return r
 
+class GroupType:
+    STEM, NODE = range(2)
+    def to_str(c):
+        if c == GroupType.STEM:
+            return 'stem'
+        assert c == GroupType.NODE
+        return 'node'
+    to_str = staticmethod(to_str)
+    def to_code(c):
+        if c.lower() == 'stem':
+            return GroupType.STEM
+        assert c.lower() == 'node'
+        return GroupType.NODE
+    to_code = staticmethod(to_code)
 
 class PhyloReferencedAnnotation(object):
     def __init__(self, serialized):
         self.des = [str(i) for i in serialized['descendants']]
         self.exclude_ancs_of = [str(i) for i in serialized.get('excludes_ancestors_of', [])]
+        self.rooted_by = GroupType.to_code(serialized['rooted_by'])
         self.applied_to = []
     def get_summary(self):
         return json.dumps(self.serialize())
     summary = property(get_summary)
     def serialize(self):
         return {'descendants': self.des,
-                'excludes_ancestors_of': self.exclude_ancs_of}
+                'excludes_ancestors_of': self.exclude_ancs_of,
+                'rooted_by': GroupType.to_str(self.rooted_by)}
 def main(tree_filename, annotations_filename):
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
