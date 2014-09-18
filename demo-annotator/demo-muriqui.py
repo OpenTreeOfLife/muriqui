@@ -7,6 +7,7 @@ import json
 import sys
 import os
 TAXOMACHINE = APIWrapper().taxomachine
+TREEMACHINE = APIWrapper().tree_of_life
 SCRIPT_NAME = os.path.split(sys.argv[0])[1]
 class Reason(object):
     NO_INC_DESIGNATORS_IN_TREE = 0
@@ -357,12 +358,7 @@ def convert_taxon_labels_to_ott_id(tree_list):
 
 def main(tree_filename, annotations_filename):
     if not os.path.exists(tree_filename):
-        try:
-            ott_id = int(tree_filename)
-        except:
-            raise ValueError('tree argument "{}" does not exist and does not appear to be an id'.format(tree_filename))
-        sys.stderr.write('Trying to fetch the tree from treemachine based on node_id...\n')
-        resp = TREEMACHINE.subtree(ott_id)
+        raise ValueError('tree file "{}" does not exist'.format(tree_filename))
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
                                                 suppress_internal_node_taxa=False)
@@ -446,8 +442,33 @@ def main(tree_filename, annotations_filename):
 
 
 if __name__ == '__main__':
-    try:
-        annotations_file, tree_file= sys.argv[1:]
-    except:
-        sys.exit('expecting 2 arguments: a JSON file of annotations and a tree file.')
+    import argparse
+    parser = argparse.ArgumentParser('demo of muriqui mapping annotations to a tree')
+    parser.add_argument('--taxon-tree', type=int, help='ott ID that will be used to fetch taxonomy/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-node', type=int, help='treemachine node ID that will be used to fetch tree_of_life/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-ott', type=int, help='ott ID that will be used to fetch tree_of_life/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-file', help='filepath to newick file with labels as ott IDs or using the name_ott#### convention')
+    parser.add_argument('json', help='filepath to JSON file with annotations')
+    args = parser.parse_args()
+    annotations_file = args.json
+    if args.tree_file is not None:
+        tree_file = args.tree_file
+    else:
+        if args.taxon_tree is not None:
+            resp = TAXOMACHINE.subtree(int(args.taxon_tree))['subtree']
+        elif args.tree_node is not None:
+            resp = TREEMACHINE.subtree(node_id=int(args.tree_node))['newick']
+        elif args.tree_ott is not None:
+            resp = TREEMACHINE.subtree(ott_id=int(args.tree_ott))['newick']
+        else:
+            sys.exit('must specify a tree\n')
+        import tempfile
+        handle, tmpf = tempfile.mkstemp(suffix='.tre')
+        sys.stderr.write('Writing fetched tree to "{}"'.format(tmpf))
+        os.close(handle)
+        o = codecs.open(tmpf, 'w', encoding='utf-8')
+        o.write(resp)
+        o.write(';\n')
+        o.close()
+        tree_file = tmpf
     main(tree_file, annotations_file)
