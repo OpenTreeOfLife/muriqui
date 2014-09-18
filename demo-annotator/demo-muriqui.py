@@ -2,6 +2,7 @@
 import dendropy
 from dendropy.utility import container
 from peyotl.api import APIWrapper
+from cStringIO import StringIO
 import codecs
 import json
 import sys
@@ -172,8 +173,14 @@ def find_node_based_target(tree, annotation):
     return MappingOutcome(mrca, Reason.SUCCESS, None, None)
 
 def _find_mrca_and_verify_monophyly(tree, annotation):
-    in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
-    exclude, dropped_exc = bits_in_tree(tree, annotation.exclude_ancs_of)
+    expanded_exc = []
+    for oid in annotation.exclude_ancs_of:
+        expanded_exc.extend(expand_clade_using_ott(oid))
+    expanded_inc = []
+    for oid in annotation.des:
+        expanded_inc.extend(expand_clade_using_ott(oid))
+    in_tree, dropped_inc = taxa_in_tree(tree, expanded_inc)
+    exclude, dropped_exc = bits_in_tree(tree, expanded_exc)
     if not exclude:
         return MappingOutcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
     exc_bit_set = 0
@@ -254,9 +261,24 @@ class GroupType:
     to_code = staticmethod(to_code)
 class _CheckBase(object):
     pass
+def get_ott_ids_from_taxon_namespace(ns):
+    r = []
+    for taxon in ns:
+        x = concat_taxon_label_to_ott_id(taxon.label)
+        r.append(x)
+    return r
+_EXP_CACHE = {}
 def expand_clade_using_ott(ott_id):
-    # TAXOMACHINE.subtree(ott_id)
-    return [ott_id]
+    global _EXP_CACHE
+    if ott_id in _EXP_CACHE:
+        return _EXP_CACHE[ott_id]
+    n = TAXOMACHINE.subtree(ott_id)['subtree']
+    if n.startswith('('):
+        n += ';'
+        inp = StringIO(n)
+        t = dendropy.Tree.get_from_stream(inp, 'newick')
+        return get_ott_ids_from_taxon_namespace(t.taxon_namespace)
+    return [concat_taxon_label_to_ott_id(n)]
 class MonophylyCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
@@ -334,30 +356,37 @@ def all_numeric_taxa(tree_list):
             except:
                 return False
     return True
+def concat_taxon_label_to_ott_id(label, from_taxom=False):
+    s = label.split('_')
+    try:
+        if len(s) < 2:
+            s = label.split(' ')
+        if len(s) < 2:
+            sys.stderr.write('name without underscore "{}" found.\n'.format(label))
+            assert False
+        o = s[-1]
+        if not o.startswith('ott'):
+            o = label.split(' ')[-1]
+            if not o.startswith('ott'):
+                sys.stderr.write('name without trailing _ott# "{}" found.\n'.format(label))
+                assert False
+        ott_id = o[3:]
+    except:
+        raise
+        msg = 'Currently the tree must be either labelled with only ott IDs or the using the name_ott<OTTID> convention.'
+        if from_taxom:
+            msg += ' The tree was fetched from taxomachine internally to expand an ott ID.'
+        raise ValueError(msg)
+    return ott_id
+
 def convert_taxon_labels_to_ott_id(tree_list):
     tree  = tree_list[0]
     for taxon in tree.taxon_namespace:
         try:
             int(taxon.label)
         except:
-            s = taxon.label.split('_')
-            try:
-                if len(s) < 2:
-                    s = taxon.label.split(' ')
-                if len(s) < 2:
-                    sys.stderr.write('name without underscore "{}" found.\n'.format(taxon.label))
-                    assert False
-
-                o = s[-1]
-                if not o.startswith('ott'):
-                    o = taxon.label.split(' ')[-1]
-                    if not o.startswith('ott'):
-                        sys.stderr.write('name without trailing _ott# "{}" found.\n'.format(taxon.label))
-                        assert False
-                ott_id = o[3:]
-                taxon.label = ott_id
-            except:
-                sys.exit('Currently the tree must be either labelled with only ott IDs or the using the name_ott<OTTID> convention.')
+            ott_id = concat_taxon_label_to_ott_id(taxon.label)
+            taxon.label = ott_id
 UNNAMED_NODE_COUNT = 0
 def get_node_out_id(node):
     global UNNAMED_NODE_COUNT
@@ -447,7 +476,7 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
                         out_table_file_obj.write('edge\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.annot_id))
         # Report unadded annotations
         for annotation, add_record in unadded:
-            out_table_file_obj.write('NA\t\t{a}\n'.format(a=a.annot_id))
+            out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.annot_id))
 
 
 if __name__ == '__main__':
