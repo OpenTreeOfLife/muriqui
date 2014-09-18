@@ -283,7 +283,8 @@ class CladeExcludesCheck(object):
                 return False
         return True
 
-_CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck, }
+_CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck, 
+                       'TARGET_EXCLUDES': CladeExcludesCheck, }
 def deserialize_check(from_json):
     type_code = from_json[0]
     t = _CHECK_CODE_TO_TYPE[type_code]
