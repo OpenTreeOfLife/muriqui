@@ -187,8 +187,10 @@ class CheckOutcome(object):
         self.check = check
 def check_passes_result(check):
     return CheckOutcome(True, check)
-def passed_check(tree, node_or_edge, check):
-    return check_passes_result(check)
+def perform_check(tree, node_or_edge, check):
+    if check.passes(tree, node_or_edge):
+        return check_passes_result(check)
+    return CheckOutcome(False, check)
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.rooted_by == GroupType.BRANCH:
         r = find_stem_based_phylorefenced_annotation(tree, annotation)
@@ -225,6 +227,38 @@ class GroupType:
         assert c.lower() == 'node'
         return GroupType.NODE
     to_code = staticmethod(to_code)
+class _CheckBase(object):
+    pass
+class MonophylyCheck(object):
+    def __init__(self, *valist):
+        self.clade_list = [str(i) for i in valist]
+    def passes(self, tree, node_or_edge):
+        self.failed = None
+        for c in self.clade_list:
+            bitmask = tree.label2bit.get(c)
+            if (bitmask is None) or (bitmask not in tree.split_edges):
+                print tree.split_edges.keys()
+                print c, bitmask
+                self.failed = c
+                return False
+        return True
+class bogus(object):
+    def __init__(self, *valist):
+        self.clade_list = list(valist)
+    def passes(self, tree, node_or_edge):
+        if not node_or_edge:
+            return None
+        try:
+            edge = node_or_edge.edge
+        except:
+            edge = node_or_edge
+
+
+_CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck, }
+def deserialize_check(from_json):
+    type_code = from_json[0]
+    t = _CHECK_CODE_TO_TYPE[type_code]
+    return t(*from_json[1:])
 
 class PhyloReferencedAnnotation(object):
     def __init__(self, serialized):
@@ -235,8 +269,8 @@ class PhyloReferencedAnnotation(object):
         self.des = [str(i) for i in self.target['included_ids']]
         self.exclude_ancs_of = [str(i) for i in self.target.get('excluded_ids', [])]
         self.rooted_by = GroupType.to_code(self.target['type'])
-        self.error_checks = self.target.get('error_checks', [])
-        self.warning_checks = self.target.get('warning_checks', [])
+        self.error_checks = [deserialize_check(i) for i in self.target.get('error_checks', [])]
+        self.warning_checks = [deserialize_check(i) for i in self.target.get('warning_checks', [])]
 
         self.applied_to = []
     def get_summary(self):
