@@ -141,7 +141,7 @@ def taxa_in_tree(tree, taxa_list):
 def bits_in_tree(tree, taxa_list):
     t, dropped = taxa_in_tree(tree, taxa_list)
     return [tree.label2bit[i.label] for i in t], dropped
-def add_node_based_phyloreferenced_annotation(tree, annotation):
+def find_node_based_target(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
     if isinstance(resp, MappingOutcome):
         return resp
@@ -166,7 +166,8 @@ def _find_mrca_and_verify_monophyly(tree, annotation):
     if mrca.edge.split_bitmask & exc_bit_set:
         return MappingOutcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
     return mrca, exc_bit_set, dropped_inc, dropped_exc
-def add_stem_based_phylorefenced_annotation(tree, annotation):
+
+def find_stem_based_phylorefenced_annotation(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
     if isinstance(resp, MappingOutcome):
         return resp
@@ -180,16 +181,34 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
     if curr:
         print 'intersection of', curr.edge.split_bitmask, exc_bit_set
     return MappingOutcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
-
+class CheckOutcome(object):
+    def __init__(self, passed, check):
+        self.passed = passed
+        self.check = check
+def check_passes_result(check):
+    return CheckOutcome(True, check)
+def passed_check(tree, node_or_edge, check):
+    return check_passes_result(check)
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.rooted_by == GroupType.BRANCH:
-        r = add_stem_based_phylorefenced_annotation(tree, annotation)
+        r = find_stem_based_phylorefenced_annotation(tree, annotation)
     else:
         assert annotation.rooted_by == GroupType.NODE
-        r = add_node_based_phyloreferenced_annotation(tree, annotation)
-    if r.attached_to:
-        r.attached_to.phylo_ref.append(annotation)
-        annotation.applied_to.append((tree, r.attached_to))
+        r = find_node_based_target(tree, annotation)
+    if not r.attached_to:
+        return r
+    for check in annotation.error_checks:
+        check_result = perform_check(tree, r.attached_to, check)
+        if not check_result.passed:
+            r.add_failed_error_check(check)
+            return r
+    for check in annotation.warning_checks:
+        check_result = perform_check(tree, r.attached_to, check)
+        if not check_result.passed:
+            r.add_failed_warning_check(check)
+    r.attached_to.phylo_ref.append(annotation)
+    r.attached_to.phylo_ref.append(annotation)
+    annotation.applied_to.append((tree, r.attached_to))
     return r
 
 class GroupType:
@@ -216,6 +235,9 @@ class PhyloReferencedAnnotation(object):
         self.des = [str(i) for i in self.target['included_ids']]
         self.exclude_ancs_of = [str(i) for i in self.target.get('excluded_ids', [])]
         self.rooted_by = GroupType.to_code(self.target['type'])
+        self.error_checks = self.target.get('error_checks', [])
+        self.warning_checks = self.target.get('warning_checks', [])
+
         self.applied_to = []
     def get_summary(self):
         return json.dumps(self.serialize())
