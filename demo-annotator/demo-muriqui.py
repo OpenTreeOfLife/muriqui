@@ -138,13 +138,16 @@ class MappingOutcome(object):
         self.failed_warning_checks.append(check)
 
 
-def taxa_in_tree(tree, taxa_list):
+def taxa_in_tree(tree, taxa_list, bits=False):
     t = []
     dropped = []
     for i in taxa_list:
         ind = tree.label2index.get(i)
         if ind is not None:
-            t.append(tree.taxon_namespace[ind])
+            if bits:
+                t.append(tree.taxon_namespace[ind])
+            else:
+                t.append(tree.label2bit.get(i))
         else:
             dropped.append(i)
     return t, dropped
@@ -242,6 +245,7 @@ class _CheckBase(object):
 class MonophylyCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
+        self.failed = None
     def passes(self, tree, node_or_edge):
         self.failed = None
         for c in self.clade_list:
@@ -252,17 +256,28 @@ class MonophylyCheck(object):
                 self.failed = c
                 return False
         return True
-class bogus(object):
+class CladeExcludesCheck(object):
     def __init__(self, *valist):
-        self.clade_list = list(valist)
+        self.clade_list = [str(i) for i in valist]
+        self.failed = None
     def passes(self, tree, node_or_edge):
+        self.failed = None
         if not node_or_edge:
             return None
         try:
             edge = node_or_edge.edge
         except:
             edge = node_or_edge
-
+        for c in self.clade_list:
+            expanded = expand_clade_using_ott(c)
+            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
+            exc_code = 0
+            for t in in_tree:
+                exc_code |= t
+            if exc_code * edge.split_bitmask:
+                self.failed = c
+                return False
+        return True
 
 _CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck, }
 def deserialize_check(from_json):
