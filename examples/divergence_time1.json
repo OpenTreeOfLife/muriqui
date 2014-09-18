@@ -9,7 +9,7 @@
 	    "@type": "prov:Entity",
         "name": "blackrim"
     },
-    "oa:annotatedAt" : "datetime",
+    "oa:annotatedAt" : "2009/01/30 18:04:11",
     "oa:hasTarget" : { 
         "@type":"node" , 
         "included_ids":[99252], 
