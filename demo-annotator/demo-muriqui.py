@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import dendropy
 from dendropy.utility import container
+from muriqui import PhyloReferencedAnnotation, GroupType
 import codecs
 import json
 import sys
@@ -189,39 +190,7 @@ def add_phyloreferenced_annotation(tree, annotation):
         annotation.applied_to.append((tree, r['target']))
     return r
 
-class GroupType:
-    BRANCH, NODE = range(2)
-    def to_str(c):
-        if c == GroupType.BRANCH:
-            return 'branch'
-        assert c == GroupType.NODE
-        return 'node'
-    to_str = staticmethod(to_str)
-    def to_code(c):
-        if c.lower() == 'branch':
-            return GroupType.BRANCH
-        assert c.lower() == 'node'
-        return GroupType.NODE
-    to_code = staticmethod(to_code)
 
-class PhyloReferencedAnnotation(object):
-    def __init__(self, serialized):
-        self.target = serialized['oa:hasTarget']
-        self.annotated_at = serialized['oa:annotatedAt']
-        self.annotated_by = serialized['oa:annotatedBy']
-        self.body = serialized['oa:hasBody']
-        self.des = [str(i) for i in self.target['included_ids']]
-        self.exclude_ancs_of = [str(i) for i in self.target.get('excluded_ids', [])]
-        self.rooted_by = GroupType.to_code(self.target['type'])
-        self.applied_to = []
-    def get_summary(self):
-        return json.dumps(self.serialize())
-    summary = property(get_summary)
-    def serialize(self):
-        return {'oa:hasTarget': self.target,
-                'oa:annotatedBy': self.annotated_by,
-                'oa:annotatedAt': self.annotated_at,
-                'oa:hasBody': self.body,}
 def main(tree_filename, annotations_filename):
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
@@ -257,7 +226,7 @@ def main(tree_filename, annotations_filename):
         num_added = 0
         unadded = []
         for annot_index, annotation in enumerate(annot_list):
-            a = PhyloReferencedAnnotation(annotation)
+            a = PhyloReferencedAnnotation.fromData(annotation)
             response = add_phyloreferenced_annotation(tree, a)
             x = response['target']
             if x:
