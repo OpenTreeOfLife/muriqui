@@ -322,10 +322,52 @@ class PhyloReferencedAnnotation(object):
                 'oa:annotatedBy': self.annotated_by,
                 'oa:annotatedAt': self.annotated_at,
                 'oa:hasBody': self.body,}
+def all_numeric_taxa(tree_list):
+    for tree in tree_list:
+        for taxon in tree.taxon_namespace:
+            try:
+                int(taxon.label)
+            except:
+                return False
+    return True
+def convert_taxon_labels_to_ott_id(tree_list):
+    tree  = tree_list[0]
+    for taxon in tree.taxon_namespace:
+        try:
+            int(taxon.label)
+        except:
+            s = taxon.label.split('_')
+            try:
+                if len(s) < 2:
+                    s = taxon.label.split(' ')
+                if len(s) < 2:
+                    sys.stderr.write('name without underscore "{}" found.\n'.format(taxon.label))
+                    assert False
+
+                o = s[-1]
+                if not o.startswith('ott'):
+                    o = taxon.label.split(' ')[-1]
+                    if not o.startswith('ott'):
+                        sys.stderr.write('name without trailing _ott# "{}" found.\n'.format(taxon.label))
+                        assert False
+                ott_id = o[3:]
+                taxon.label = ott_id
+            except:
+                sys.exit('Currently the tree must be either labelled with only ott IDs or the using the name_ott<OTTID> convention.')
+
 def main(tree_filename, annotations_filename):
+    if not os.path.exists(tree_filename):
+        try:
+            ott_id = int(tree_filename)
+        except:
+            raise ValueError('tree argument "{}" does not exist and does not appear to be an id'.format(tree_filename))
+        sys.stderr.write('Trying to fetch the tree from treemachine based on node_id...\n')
+        resp = TREEMACHINE.subtree(ott_id)
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
                                                 suppress_internal_node_taxa=False)
+    if not all_numeric_taxa(tree_list):
+        convert_taxon_labels_to_ott_id(tree_list)
     for tree in tree_list:
         tree.print_plot(show_internal_node_ids=True)
         mod_encode_splits(tree, delete_outdegree_one=False, internal_node_taxa=True)
@@ -405,7 +447,7 @@ def main(tree_filename, annotations_filename):
 
 if __name__ == '__main__':
     try:
-        tree_file, annotations_file = sys.argv[1:]
+        annotations_file, tree_file= sys.argv[1:]
     except:
-        sys.exit('expecting 2 arguments: a tree file and a JSON file of annotations')
+        sys.exit('expecting 2 arguments: a JSON file of annotations and a tree file.')
     main(tree_file, annotations_file)
