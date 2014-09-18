@@ -120,11 +120,14 @@ def mod_encode_splits(tree, create_dict=True, delete_outdegree_one=True, interna
 def debug(msg):
     sys.stderr.write('{s}: {m}\n'.format(s=SCRIPT_NAME, m=msg))
 
-def outcome(target, return_code, dropped_inc, dropped_exc):
-    return {'target': target,
-            'reason_code': return_code,
-            'dropped_inc': dropped_inc,
-            'dropped_exc': dropped_exc}
+class MappingOutcome(object):
+    def __init__(self, attached_to=None, reason_code=Reason.SUCCESS, missing_inc=tuple(), missing_exc=tuple()):
+        self.attached_to = attached_to
+        self.reason_code = reason_code
+        self.missing_inc = missing_inc
+        self.missing_exc = missing_exc
+
+
 def taxa_in_tree(tree, taxa_list):
     t = []
     dropped = []
@@ -140,32 +143,32 @@ def bits_in_tree(tree, taxa_list):
     return [tree.label2bit[i.label] for i in t], dropped
 def add_node_based_phyloreferenced_annotation(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
-    if isinstance(resp, dict):
+    if isinstance(resp, MappingOutcome):
         return resp
     mrca, exc_bit_set, dropped_inc, dropped_exc = resp
-    return outcome(mrca, Reason.SUCCESS, None, None)
+    return MappingOutcome(mrca, Reason.SUCCESS, None, None)
 
 def _find_mrca_and_verify_monophyly(tree, annotation):
     in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
     exclude, dropped_exc = bits_in_tree(tree, annotation.exclude_ancs_of)
     if not exclude:
-        return outcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
+        return MappingOutcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
     exc_bit_set = 0
     for e in exclude:
         exc_bit_set |= e
     if len(in_tree) == 0:
-        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_exc)
+        return MappingOutcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_exc)
     if len(in_tree) == 1:
         mrca = tree.find_node_with_taxon_label(in_tree[0].label)
     else:
         mrca = tree.mrca(taxa=in_tree)
     assert mrca is not None
     if mrca.edge.split_bitmask & exc_bit_set:
-        return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
+        return MappingOutcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
     return mrca, exc_bit_set, dropped_inc, dropped_exc
 def add_stem_based_phylorefenced_annotation(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
-    if isinstance(resp, dict):
+    if isinstance(resp, MappingOutcome):
         return resp
     mrca, exc_bit_set, dropped_inc, dropped_exc = resp
     deepest_valid = mrca
@@ -176,7 +179,7 @@ def add_stem_based_phylorefenced_annotation(tree, annotation):
         curr = curr.parent_node
     if curr:
         print 'intersection of', curr.edge.split_bitmask, exc_bit_set
-    return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
+    return MappingOutcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
 
 def add_phyloreferenced_annotation(tree, annotation):
     if annotation.rooted_by == GroupType.BRANCH:
@@ -184,9 +187,9 @@ def add_phyloreferenced_annotation(tree, annotation):
     else:
         assert annotation.rooted_by == GroupType.NODE
         r = add_node_based_phyloreferenced_annotation(tree, annotation)
-    if r['target']:
-        r['target'].phylo_ref.append(annotation)
-        annotation.applied_to.append((tree, r['target']))
+    if r.attached_to:
+        r.attached_to.phylo_ref.append(annotation)
+        annotation.applied_to.append((tree, r.attached_to))
     return r
 
 class GroupType:
@@ -259,7 +262,7 @@ def main(tree_filename, annotations_filename):
         for annot_index, annotation in enumerate(annot_list):
             a = PhyloReferencedAnnotation(annotation)
             response = add_phyloreferenced_annotation(tree, a)
-            x = response['target']
+            x = response.attached_to
             if x:
                 num_added += 1
             else:
@@ -301,7 +304,7 @@ def main(tree_filename, annotations_filename):
             print 'Unattached annotations'
         for annotation, add_record in unadded:
             print 'reason={r}. annotation={a}'.format(a=annotation.summary,
-                                                      r=Reason.to_str(add_record['reason_code']))
+                                                      r=Reason.to_str(add_record.reason_code))
 
 
 if __name__ == '__main__':
