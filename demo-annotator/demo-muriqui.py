@@ -10,7 +10,10 @@ class Reason(object):
     NO_INC_DESIGNATORS_IN_TREE = 0
     SUCCESS = 1
     MRCA_HAS_EXCLUDED = 2
+    ERROR_CHECK_FAILED = 3
     def to_str(c):
+        if c == Reason.ERROR_CHECK_FAILED:
+            return 'An error check failed'
         if c == Reason.NO_INC_DESIGNATORS_IN_TREE:
             return 'no specifiers to be included were in the tree'
         if c == Reason.MRCA_HAS_EXCLUDED:
@@ -126,6 +129,13 @@ class MappingOutcome(object):
         self.reason_code = reason_code
         self.missing_inc = missing_inc
         self.missing_exc = missing_exc
+        self.failed_error_checks = []
+        self.failed_warning_checks = []
+    def add_failed_error_check(self, check):
+        self.failed_error_checks.append(check)
+        self.reason_code = Reason.ERROR_CHECK_FAILED
+    def add_failed_warning_check(self, check):
+        self.failed_warning_checks.append(check)
 
 
 def taxa_in_tree(tree, taxa_list):
@@ -318,8 +328,7 @@ def main(tree_filename, annotations_filename):
         for annot_index, annotation in enumerate(annot_list):
             a = PhyloReferencedAnnotation(annotation)
             response = add_phyloreferenced_annotation(tree, a)
-            x = response.attached_to
-            if x:
+            if response.reason_code == Reason.SUCCESS:
                 num_added += 1
             else:
                 unadded.append((a, response))
