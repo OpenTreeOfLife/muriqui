@@ -138,6 +138,13 @@ class MappingOutcome(object):
         self.reason_code = Reason.ERROR_CHECK_FAILED
     def add_failed_warning_check(self, check):
         self.failed_warning_checks.append(check)
+    def explain(self):
+        if self.reason_code == Reason.SUCCESS:
+            return 'succcessfully mapped to {}'.format(self.attached_to)
+        if self.reason_code == Reason.ERROR_CHECK_FAILED:
+            return 'Error check ({}) failed.'.format(self.failed_error_checks[0].explain())
+        return 'Attaching the annotation to the tree failed ({})'.format(Reason.to_str(self.reason_code))
+
 
 
 def taxa_in_tree(tree, taxa_list, bits=False):
@@ -250,6 +257,8 @@ def expand_clade_using_ott(ott_id):
 class MonophylyCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
+    def explain(self):
+        return 'REQUIRE_MONOPHYLETIC({})'.format(', '.join(self.clade_list))
     def passes(self, tree, node_or_edge):
         bitmask = 0
         for c in self.clade_list:
@@ -264,6 +273,8 @@ class CladeExcludesCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
         self.failed = None
+    def explain(self):
+        return 'TARGET_EXCLUDES({})'.format(', '.join(self.clade_list))
     def passes(self, tree, node_or_edge):
         self.failed = None
         if not node_or_edge:
@@ -274,7 +285,7 @@ class CladeExcludesCheck(object):
             edge = node_or_edge
         for c in self.clade_list:
             expanded = expand_clade_using_ott(c)
-            in_tree, m = taxa_in_tree(tree, expanded)
+            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
             exc_code = 0
             for t in in_tree:
                 exc_code |= t
@@ -388,8 +399,8 @@ def main(tree_filename, annotations_filename):
         if len(unadded) > 0:
             print 'Unattached annotations'
         for annotation, add_record in unadded:
-            print 'reason={r}. annotation={a}'.format(a=annotation.summary,
-                                                      r=Reason.to_str(add_record.reason_code))
+            print '{r}. annotation={a}'.format(a=annotation.summary,
+                                                      r=add_record.explain())
 
 
 if __name__ == '__main__':
