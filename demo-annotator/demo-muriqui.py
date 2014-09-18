@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import dendropy
 from dendropy.utility import container
+from peyotl.api import APIWrapper
 import codecs
 import json
 import sys
 import os
+TAXOMACHINE = APIWrapper().taxomachine
 SCRIPT_NAME = os.path.split(sys.argv[0])[1]
 class Reason(object):
     NO_INC_DESIGNATORS_IN_TREE = 0
@@ -145,9 +147,9 @@ def taxa_in_tree(tree, taxa_list, bits=False):
         ind = tree.label2index.get(i)
         if ind is not None:
             if bits:
-                t.append(tree.taxon_namespace[ind])
+                t.append(tree.label2bit[i])
             else:
-                t.append(tree.label2bit.get(i))
+                t.append(tree.taxon_namespace[ind])
         else:
             dropped.append(i)
     return t, dropped
@@ -242,19 +244,21 @@ class GroupType:
     to_code = staticmethod(to_code)
 class _CheckBase(object):
     pass
+def expand_clade_using_ott(ott_id):
+    # TAXOMACHINE.subtree(ott_id)
+    return [ott_id]
 class MonophylyCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
-        self.failed = None
     def passes(self, tree, node_or_edge):
-        self.failed = None
+        bitmask = 0
         for c in self.clade_list:
-            bitmask = tree.label2bit.get(c)
-            if (bitmask is None) or (bitmask not in tree.split_edges):
-                print tree.split_edges.keys()
-                print c, bitmask
-                self.failed = c
-                return False
+            expanded = expand_clade_using_ott(c)
+            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
+            for x in in_tree:
+                bitmask |= x
+        if (bitmask == 0) or (bitmask not in tree.split_edges):
+            return False
         return True
 class CladeExcludesCheck(object):
     def __init__(self, *valist):
@@ -270,7 +274,7 @@ class CladeExcludesCheck(object):
             edge = node_or_edge
         for c in self.clade_list:
             expanded = expand_clade_using_ott(c)
-            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
+            in_tree, m = taxa_in_tree(tree, expanded)
             exc_code = 0
             for t in in_tree:
                 exc_code |= t
