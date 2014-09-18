@@ -1,0 +1,29 @@
+{
+"title": "taxonomy label schema",
+"type": "object",
+"properties": {
+	"oa:hasBody" : { 
+		"type":"object",
+		"properties": {
+			"type": "taxonomy label",
+			"name": {
+				"description" : "the name of the taxon",
+				"type" : "string"
+			},
+			"rank" : {
+				"description": "the taxonomic rank if it exists",
+				"type": "string"
+			},
+			"source" : {
+				"description": "the taxonomic source",
+				"type": "string"
+			},
+			"unique id" : {
+				"description": "the unique id from the source",
+				"type": "string"
+			}
+		},
+		"required": ["name","source"]
+	}
+	}
+}
