@@ -7,25 +7,26 @@
     "@type": "oa:Annotation",
     "oa:annotatedBy": {
 	    "@type": "prov:Entity",
-        "name": "blackrim"
+        "name": "kcranstn"
     },
     "oa:annotatedAt" : "datetime",
     "oa:hasTarget" : { 
-        "@type":"node" , 
-        "included_ids":[5316182], 
-        "error_checks":[],
+        "@type":"branch" , 
+        "included_ids":[219663],
+		"excluded_ids":[1086294],
+        "error_checks":[], 
         "warning_checks":[]
     },
     "oa:hasBody" : {
         "@type" : "divergence time estimate", 
         "@id" : "IRI",
-        "citation": "doi: 10.3732/ajb.0900346",
-        "stated taxon": "Pentapetalae",
-        "mean age": 117 ,
-        "minimum age": 107 ,
-        "maximum age": 127 ,
+        "citation": "doi: 10.1016/j.ympev.2009.05.014",
+        "stated taxon": "Campanula",
+        "mean age": 16 ,
+        "minimum age": 16 ,
+        "maximum age": 16.7 ,
         "age unit": "million years ago",
         "analysis type": "Bayesian divergence time analysis",
-        "analysis details":  "Based on 36 minimum age constraints treated as exponential distributions."
+        "analysis details":  "Based on some data but I didn't really read the paper."
     }
 }

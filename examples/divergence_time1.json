@@ -13,8 +13,8 @@
     "oa:hasTarget" : { 
         "@type":"node" , 
         "included_ids":[99252], 
-        "excluded_ids":[5296507], 
-        "strict":false
+        "error_checks":[["CLADE_EXCLUDES", 5296507],["REQUIRE_MONOPHYLETIC", 99252]], 
+        "warning_checks":[]
     },
     "oa:hasBody" : {
         "@type" : "divergence time estimate", 
