@@ -1,0 +1,25 @@
+{
+"title": "node target schema",
+"type": "object",
+"properties": {
+	"oa:hasTarget" : { 
+		"type":"object",
+		"properties": {
+			"type": "node",
+			"included_ids": {
+				"description" : "an array of ott ids",
+				"type" : "array"
+			},
+			"error_checks": {
+				"description" : "",
+				"type": "array"
+            },
+			"warning_checks" : {
+				"description": "",
+				"type": "array"
+			}
+		},
+		"required": ["included_ids"]
+	}
+	}
+}
