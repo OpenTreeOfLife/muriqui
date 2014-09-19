@@ -1,17 +1,23 @@
 #!/usr/bin/env python
 import dendropy
 from dendropy.utility import container
-from muriqui import PhyloReferencedAnnotation, GroupType
+from peyotl.api import APIWrapper
+from cStringIO import StringIO
 import codecs
 import json
 import sys
 import os
+TAXOMACHINE = APIWrapper().taxomachine
+TREEMACHINE = APIWrapper().tree_of_life
 SCRIPT_NAME = os.path.split(sys.argv[0])[1]
 class Reason(object):
     NO_INC_DESIGNATORS_IN_TREE = 0
     SUCCESS = 1
     MRCA_HAS_EXCLUDED = 2
+    ERROR_CHECK_FAILED = 3
     def to_str(c):
+        if c == Reason.ERROR_CHECK_FAILED:
+            return 'An error check failed'
         if c == Reason.NO_INC_DESIGNATORS_IN_TREE:
             return 'no specifiers to be included were in the tree'
         if c == Reason.MRCA_HAS_EXCLUDED:
@@ -121,82 +127,448 @@ def mod_encode_splits(tree, create_dict=True, delete_outdegree_one=True, interna
 def debug(msg):
     sys.stderr.write('{s}: {m}\n'.format(s=SCRIPT_NAME, m=msg))
 
-def outcome(target, return_code, dropped_inc, dropped_exc):
-    return {'target': target,
-            'reason_code': return_code,
-            'dropped_inc': dropped_inc,
-            'dropped_exc': dropped_exc}
-def taxa_in_tree(tree, taxa_list):
+class MappingOutcome(object):
+    def __init__(self, attached_to=None, reason_code=Reason.SUCCESS, missing_inc=tuple(), missing_exc=tuple()):
+        self.attached_to = attached_to
+        self.reason_code = reason_code
+        self.missing_inc = missing_inc
+        self.missing_exc = missing_exc
+        self.failed_error_checks = []
+        self.failed_warning_checks = []
+    def add_failed_error_check(self, check):
+        self.failed_error_checks.append(check)
+        self.reason_code = Reason.ERROR_CHECK_FAILED
+    def add_failed_warning_check(self, check):
+        self.failed_warning_checks.append(check)
+    def explain(self):
+        if self.reason_code == Reason.SUCCESS:
+            return 'succcessfully mapped to {}'.format(self.attached_to)
+        if self.reason_code == Reason.ERROR_CHECK_FAILED:
+            return 'Error check ({}) failed.'.format(self.failed_error_checks[0].explain())
+        return 'Attaching the annotation to the tree failed ({})'.format(Reason.to_str(self.reason_code))
+
+
+
+def taxa_in_tree(tree, taxa_list, bits=False):
     t = []
     dropped = []
     for i in taxa_list:
         ind = tree.label2index.get(i)
         if ind is not None:
-            t.append(tree.taxon_namespace[ind])
+            if bits:
+                t.append(tree.label2bit[i])
+            else:
+                t.append(tree.taxon_namespace[ind])
         else:
             dropped.append(i)
     return t, dropped
 def bits_in_tree(tree, taxa_list):
     t, dropped = taxa_in_tree(tree, taxa_list)
     return [tree.label2bit[i.label] for i in t], dropped
-def add_node_based_phyloreferenced_annotation(tree, annotation):
+def find_node_based_target(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
-    if isinstance(resp, dict):
+    if isinstance(resp, MappingOutcome):
         return resp
     mrca, exc_bit_set, dropped_inc, dropped_exc = resp
-    return outcome(mrca, Reason.SUCCESS, None, None)
+    return MappingOutcome(mrca, Reason.SUCCESS, None, None)
 
 def _find_mrca_and_verify_monophyly(tree, annotation):
-    in_tree, dropped_inc = taxa_in_tree(tree, annotation.des)
-    exclude, dropped_exc = bits_in_tree(tree, annotation.exclude_ancs_of)
+    expanded_exc = []
+    for oid in annotation.target.exclude_ancs_of:
+        expanded_exc.extend(expand_clade_using_ott(oid))
+    expanded_inc = []
+    for oid in annotation.target.des:
+        expanded_inc.extend(expand_clade_using_ott(oid))
+    in_tree, dropped_inc = taxa_in_tree(tree, expanded_inc)
+    exclude, dropped_exc = bits_in_tree(tree, expanded_exc)
     if not exclude:
-        return outcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
+        return MappingOutcome(tree.seed_node, Reason.SUCCESS, dropped_inc, dropped_exc)
     exc_bit_set = 0
     for e in exclude:
         exc_bit_set |= e
     if len(in_tree) == 0:
-        return outcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_exc)
+        return MappingOutcome(False, Reason.NO_INC_DESIGNATORS_IN_TREE, dropped_inc, dropped_exc)
     if len(in_tree) == 1:
         mrca = tree.find_node_with_taxon_label(in_tree[0].label)
     else:
         mrca = tree.mrca(taxa=in_tree)
     assert mrca is not None
     if mrca.edge.split_bitmask & exc_bit_set:
-        return outcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
+        return MappingOutcome(False, Reason.MRCA_HAS_EXCLUDED, dropped_inc, dropped_exc)
     return mrca, exc_bit_set, dropped_inc, dropped_exc
-def add_stem_based_phylorefenced_annotation(tree, annotation):
+
+def find_stem_based_phylorefenced_annotation(tree, annotation):
     resp = _find_mrca_and_verify_monophyly(tree, annotation)
-    if isinstance(resp, dict):
+    if isinstance(resp, MappingOutcome):
         return resp
     mrca, exc_bit_set, dropped_inc, dropped_exc = resp
     deepest_valid = mrca
     curr = mrca.parent_node
     while (curr is not None) and ((curr.edge.split_bitmask & exc_bit_set) == 0):
-        print 'no intersection of', curr.edge.split_bitmask, exc_bit_set
+        #print 'no intersection of', curr.edge.split_bitmask, exc_bit_set
         deepest_valid = curr
         curr = curr.parent_node
-    if curr:
-        print 'intersection of', curr.edge.split_bitmask, exc_bit_set
-    return outcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
-
+    #if curr:
+    #    print 'intersection of', curr.edge.split_bitmask, exc_bit_set
+    return MappingOutcome(deepest_valid.edge, Reason.SUCCESS, dropped_inc, dropped_exc)
+class CheckOutcome(object):
+    def __init__(self, passed, check):
+        self.passed = passed
+        self.check = check
+def check_passes_result(check):
+    return CheckOutcome(True, check)
+def perform_check(tree, node_or_edge, check):
+    if check.passes(tree, node_or_edge):
+        return check_passes_result(check)
+    return CheckOutcome(False, check)
+    
 def add_phyloreferenced_annotation(tree, annotation):
-    if annotation.rooted_by == GroupType.BRANCH:
-        r = add_stem_based_phylorefenced_annotation(tree, annotation)
+    #debug('Trying annotation {}'.format(annotation.annot_id))
+    print annotation.target.rooted_by
+    if annotation.target.rooted_by == GroupType.BRANCH:
+        r = find_stem_based_phylorefenced_annotation(tree, annotation)
     else:
-        assert annotation.rooted_by == GroupType.NODE
-        r = add_node_based_phyloreferenced_annotation(tree, annotation)
-    if r['target']:
-        r['target'].phylo_ref.append(annotation)
-        annotation.applied_to.append((tree, r['target']))
+        assert annotation.target.rooted_by == GroupType.NODE
+        r = find_node_based_target(tree, annotation)
+    if r.reason_code != Reason.SUCCESS:
+        return r
+    for check in annotation.target.error_checks:
+        check_result = perform_check(tree, r.attached_to, check)
+        if not check_result.passed:
+            r.add_failed_error_check(check)
+            return r
+    for check in annotation.target.warning_checks:
+        check_result = perform_check(tree, r.attached_to, check)
+        if not check_result.passed:
+            r.add_failed_warning_check(check)
+    #debug('Adding annotation {a} to {e}'.format(a=annotation.annot_id, e=r.attached_to))
+    r.attached_to.phylo_ref.append(annotation)
+    annotation.applied_to.append((tree, r.attached_to))
+    assert r.reason_code == Reason.SUCCESS
     return r
 
+class GroupType:
+    BRANCH, NODE = range(2)
+    def to_str(c):
+        if c == GroupType.BRANCH:
+            return 'branch'
+        assert c == GroupType.NODE
+        return 'node'
+    to_str = staticmethod(to_str)
+    def to_code(c):
+        if c.lower() == 'branch':
+            return GroupType.BRANCH
+        assert c.lower() == 'node'
+        return GroupType.NODE
+    to_code = staticmethod(to_code)
+class _CheckBase(object):
+    pass
+def get_ott_ids_from_taxon_namespace(ns):
+    r = []
+    for taxon in ns:
+        x = concat_taxon_label_to_ott_id(taxon.label)
+        r.append(x)
+    return r
+_EXP_CACHE = {}
+def expand_clade_using_ott(ott_id):
+    global _EXP_CACHE
+    if ott_id in _EXP_CACHE:
+        return _EXP_CACHE[ott_id]
+    n = TAXOMACHINE.subtree(ott_id)['subtree']
+    if n.startswith('('):
+        n += ';'
+        inp = StringIO(n)
+        t = dendropy.Tree.get_from_stream(inp, 'newick')
+        return get_ott_ids_from_taxon_namespace(t.taxon_namespace)
+    return [concat_taxon_label_to_ott_id(n)]
+class MonophylyCheck(object):
+    def __init__(self, *valist):
+        self.clade_list = [str(i) for i in valist]
+    def explain(self):
+        return 'REQUIRE_MONOPHYLETIC({})'.format(', '.join(self.clade_list))
+    def passes(self, tree, node_or_edge):
+        bitmask = 0
+        for c in self.clade_list:
+            expanded = expand_clade_using_ott(c)
+            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
+            for x in in_tree:
+                bitmask |= x
+        if (bitmask == 0) or (bitmask not in tree.split_edges):
+            return False
+        return True
+    def to_json(self):
+        return ["REQUIRE_MONOPHYLETIC",] + self.clade_list
+class CladeExcludesCheck(object):
+    def __init__(self, *valist):
+        self.clade_list = [str(i) for i in valist]
+        self.failed = None
+    def explain(self):
+        return 'TARGET_EXCLUDES({})'.format(', '.join(self.clade_list))
+    def passes(self, tree, node_or_edge):
+        self.failed = None
+        if not node_or_edge:
+            return None
+        try:
+            edge = node_or_edge.edge
+        except:
+            edge = node_or_edge
+        for c in self.clade_list:
+            expanded = expand_clade_using_ott(c)
+            in_tree, m = taxa_in_tree(tree, expanded, bits=True)
+            exc_code = 0
+            for t in in_tree:
+                exc_code |= t
+            if exc_code * edge.split_bitmask:
+                self.failed = c
+                return False
+        return True
+    def to_json(self):
+        return ['TARGET_EXCLUDES',] + self.clade_list
 
-def main(tree_filename, annotations_filename):
+_CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck, 
+                       'TARGET_EXCLUDES': CladeExcludesCheck, }
+def deserialize_check(from_json):
+    type_code = from_json[0]
+    t = _CHECK_CODE_TO_TYPE[type_code]
+    return t(*from_json[1:])
+
+class ReferenceTarget(object):
+    def __init__(self, group_type):
+        self._rooted_by = GroupType.to_code(group_type)
+        self._des = []
+        self._exclude_ancs_of = []
+        self._error_checks = []
+        self._warning_checks = []
+
+    @property
+    def rooted_by(self):
+        return self._rooted_by
+    @rooted_by.setter
+    def rooted_by(self, type):
+        self._rooted_by = type
+
+    @property
+    def des(self):
+        return self._des
+
+    @property
+    def exclude_ancs_of(self):
+        return self._exclude_ancs_of
+
+    @property
+    def error_checks(self):
+        return self._error_checks
+
+    @property
+    def warning_checks(self):
+        return self._warning_checks
+
+    def include_specifiers(self, specifiers):
+        for s in specifiers:
+            self._des.append(s)
+    
+    def exclude_specifiers(self, specifiers):
+        for s in specifiers:
+            self._exclude_ancs_of.append(s)
+
+    def add_error_condition(self, condition):
+        self._error_checks.append(condition)
+    
+    def add_warning_condition(self, condition):
+        self._warning_checks.append(condition)
+            
+    @classmethod
+    def from_data(cls, data):
+        t = cls(data['type'])
+        t.include_specifiers(data['included_ids'])
+        t.exclude_specifiers(data.get('excluded_ids', []))
+        for s in data.get('error_checks', []):
+            t.add_error_condition(deserialize_check(s))
+        for s in data.get('warning_checks', []):
+            t.add_warning_condition(deserialize_check(s))
+        return t
+    
+    def to_json(self):
+        return {
+            "type": GroupType.to_str(self._rooted_by),
+            "included_ids": self._des,
+            "excluded_ids": self._exclude_ancs_of,
+            "error_checks": [x.to_json() for x in self._error_checks],
+            "warning_checks": [x.to_json() for x in self._warning_checks],
+        }
+            
+class Entity(object):
+    def __init__(self):
+        self._name = ""
+        self._type = ""
+    
+    @property
+    def name(self):
+        return self._name
+    
+    @name.setter
+    def name(self, name):
+        self._name = name
+
+    @property
+    def type(self):
+        return self._type
+    
+    @name.setter
+    def type(self, type):
+        self._type = type
+    
+    @classmethod
+    def from_data(cls, data):
+        e = cls()
+        e.name = data["name"]
+        e.type = data["type"]
+        return e
+
+    def to_json(self):
+        return {
+            "type": self._type,
+            "name": self._name,
+        }
+class PhyloReferencedAnnotation(object):
+    def __init__(self):
+        self._id = None # unique ID
+        self._target = None
+        self._annotated_at = ""
+        self._annotated_by = None
+        self._body = None 
+        self._applied_to = []
+
+    @property
+    def annot_id(self):
+        return self._id
+    @annot_id.setter
+    def annot_id(self, id):
+        self._id = id
+
+    @property
+    def target(self):
+        return self._target
+    @target.setter
+    def target(self, target):
+        self._target = target
+    
+    @property
+    def annotated_at(self):
+        return self._annotated_at
+    @annotated_at.setter
+    def annotated_at(self, datetime):
+        self._annotated_at = datetime
+
+    @property
+    def annotated_by(self):
+        return self._annotated_by
+    @annotated_by.setter
+    def annotated_by(self, entity):
+        self._annotated_by = entity
+    
+    @property
+    def body(self):
+        return self._body
+    @body.setter
+    def body(self, body):
+        self._body = body
+        
+    @property
+    def applied_to(self):
+        return self._applied_to
+    @applied_to.setter
+    def applied_to(self, applied_to):
+        self._applied_to = applied_to
+        
+    @classmethod
+    def from_data(cls, data):
+        a = cls()
+        a.id = data['_id']
+        a.target = ReferenceTarget.from_data(data['oa:hasTarget'])
+        a.annotated_at = data['oa:annotatedAt']
+        a.annotated_by = Entity.from_data(data['oa:annotatedBy'])
+        a.body = data['oa:hasBody']
+        return a
+
+    @property
+    def summary(self):
+        return json.dumps(self.to_json())
+#    summary = property(get_summary)
+
+    def to_json(self):
+        return {
+            'oa:hasTarget': self.target.to_json(),
+            'oa:annotatedBy': self.annotated_by.to_json(),
+            'oa:annotatedAt': self.annotated_at,
+            'oa:hasBody': self.body,
+        }
+
+def all_numeric_taxa(tree_list):
+    for tree in tree_list:
+        for taxon in tree.taxon_namespace:
+            try:
+                int(taxon.label)
+            except:
+                return False
+    return True
+def concat_taxon_label_to_ott_id(label, from_taxom=False):
+    s = label.split('_')
+    try:
+        if len(s) < 2:
+            s = label.split(' ')
+        if len(s) < 2:
+            sys.stderr.write('name without underscore "{}" found.\n'.format(label))
+            assert False
+        o = s[-1]
+        if not o.startswith('ott'):
+            o = label.split(' ')[-1]
+            if not o.startswith('ott'):
+                sys.stderr.write('name without trailing _ott# "{}" found.\n'.format(label))
+                assert False
+        ott_id = o[3:]
+    except:
+        raise
+        msg = 'Currently the tree must be either labelled with only ott IDs or the using the name_ott<OTTID> convention.'
+        if from_taxom:
+            msg += ' The tree was fetched from taxomachine internally to expand an ott ID.'
+        raise ValueError(msg)
+    return ott_id
+
+def convert_taxon_labels_to_ott_id(tree_list):
+    tree  = tree_list[0]
+    for taxon in tree.taxon_namespace:
+        try:
+            int(taxon.label)
+        except:
+            ott_id = concat_taxon_label_to_ott_id(taxon.label)
+            taxon.label = ott_id
+UNNAMED_NODE_COUNT = 0
+def get_node_out_id(node):
+    global UNNAMED_NODE_COUNT
+    try:
+        if node.label:
+            return node.label
+    except:
+        pass
+    if node.taxon and node.taxon.label:
+        return node.taxon.label
+    l = 'AUTOGENID' + str(UNNAMED_NODE_COUNT)
+    UNNAMED_NODE_COUNT += 1
+    node.label = l
+    return l
+def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_obj):
+    if not os.path.exists(tree_filename):
+        raise ValueError('tree file "{}" does not exist'.format(tree_filename))
     tree_list = dendropy.TreeList.get_from_path(tree_filename,
                                                 'newick',
                                                 suppress_internal_node_taxa=False)
+    if len(tree_list) != 1:
+        sys.exit('sorry, the tree input can only be one tree, now')
+    if not all_numeric_taxa(tree_list):
+        convert_taxon_labels_to_ott_id(tree_list)
     for tree in tree_list:
-        tree.print_plot(show_internal_node_ids=True)
+        #tree.print_plot(show_internal_node_ids=True)
         mod_encode_splits(tree, delete_outdegree_one=False, internal_node_taxa=True)
         tree.label2index = {}
         tree.label2bit = {}
@@ -206,49 +578,45 @@ def main(tree_filename, annotations_filename):
             tree.label2index[taxon.label] = n
             tree.label2bit[taxon.label] = curr_bit
             curr_bit <<= 1
-        print tree.label2index
-        print tree.label2bit
+        #print tree.label2index
+        #print tree.label2bit
         for node in tree.preorder_node_iter():
             node.phylo_ref = []
             if node.edge:
                 node.edge.phylo_ref = []
-            print node.edge.split_bitmask
-            if node.taxon:
-                print node.taxon.label
+            #print node.edge.split_bitmask
+            #if node.taxon:
+            #   print node.taxon.label
 
     a_f = codecs.open(annotations_filename, 'rU', encoding='utf-8')
     annot_list = json.load(a_f)
     if not isinstance(annot_list, list):
         annot_list = [annot_list]
-
     for tree_index, tree in enumerate(tree_list):
         num_tried = 0
         num_added = 0
         unadded = []
-        for annot_index, annotation in enumerate(annot_list):
-            a = PhyloReferencedAnnotation.fromData(annotation)
+        for annotation in annot_list:
+            a = PhyloReferencedAnnotation.from_data(annotation)
             response = add_phyloreferenced_annotation(tree, a)
-            x = response['target']
-            if x:
+            if response.reason_code == Reason.SUCCESS:
                 num_added += 1
             else:
                 unadded.append((a, response))
-                debug('Annotation {a} could not be added to tree {t}'.format(a=annot_index, t=tree_index))
+                #debug('Annotation {a} could not be added to tree {t}'.format(a=a.annot_id, t=tree_index))
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
         # Report tree and annotations
-        tree.print_plot(show_internal_node_ids=True)
+        tree.write(out_tree_file_obj, 'newick', node_label_compose_func=get_node_out_id)
+        out_table_file_obj.write('type\taddress\tannot-id\n')
         for node in tree.preorder_node_iter():
             if node.taxon:
                 l = node.taxon.label
             else:
                 l = '@' + str(id(node))
-            print 'Node "{l}":'.format(l=l)
             if node.phylo_ref:
                 for a in node.phylo_ref:
-                    print '   ', a.summary
-            else:
-                print '    <NO ANNOTATIONS>'
+                    out_table_file_obj.write('node\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.annot_id))
             e = node.edge
             if e:
                 p = e.tail_node
@@ -259,23 +627,47 @@ def main(tree_filename, annotations_filename):
                         pl = '@' + str(id(p))
                 else:
                     pl = 'None'
-                print 'Edge "{p}" -> "{l}"'.format(p=pl, l=l)
                 if e.phylo_ref:
                     for a in e.phylo_ref:
-                        print '   ', a.summary
-                else:
-                    print '    <NO ANNOTATIONS>'
+                        out_table_file_obj.write('edge\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.annot_id))
         # Report unadded annotations
-        if len(unadded) > 0:
-            print 'Unattached annotations'
         for annotation, add_record in unadded:
-            print 'reason={r}. annotation={a}'.format(a=annotation.summary,
-                                                      r=Reason.to_str(add_record['reason_code']))
+            out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.annot_id))
 
 
 if __name__ == '__main__':
-    try:
-        tree_file, annotations_file = sys.argv[1:]
-    except:
-        sys.exit('expecting 2 arguments: a tree file and a JSON file of annotations')
-    main(tree_file, annotations_file)
+    import argparse
+    parser = argparse.ArgumentParser('demo of muriqui mapping annotations to a tree')
+    parser.add_argument('--taxon-tree', type=int, help='ott ID that will be used to fetch taxonomy/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-node', type=int, help='treemachine node ID that will be used to fetch tree_of_life/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-ott', type=int, help='ott ID that will be used to fetch tree_of_life/subtree to use as the tree to be annotated')
+    parser.add_argument('--tree-file', help='filepath to newick file with labels as ott IDs or using the name_ott#### convention')
+    parser.add_argument('--out-table', required=True, help='file to output with the annotation placements')
+    parser.add_argument('--out-tree', required=True, help='file to output with a tree with IDs to be used with the out-table')
+    parser.add_argument('json', help='filepath to JSON file with annotations')
+    args = parser.parse_args()
+    annotations_file = args.json
+    o_tree = open(args.out_tree, 'w')
+    o_table = open(args.out_table, 'w')
+
+    if args.tree_file is not None:
+        tree_file = args.tree_file
+    else:
+        if args.taxon_tree is not None:
+            resp = TAXOMACHINE.subtree(int(args.taxon_tree))['subtree']
+        elif args.tree_node is not None:
+            resp = TREEMACHINE.subtree(node_id=int(args.tree_node))['newick']
+        elif args.tree_ott is not None:
+            resp = TREEMACHINE.subtree(ott_id=int(args.tree_ott))['newick']
+        else:
+            sys.exit('must specify a tree\n')
+        import tempfile
+        handle, tmpf = tempfile.mkstemp(suffix='.tre')
+        sys.stderr.write('Writing fetched tree to "{}"'.format(tmpf))
+        os.close(handle)
+        o = codecs.open(tmpf, 'w', encoding='utf-8')
+        o.write(resp)
+        o.write(';\n')
+        o.close()
+        tree_file = tmpf
+    main(tree_file, annotations_file, o_tree, o_table)
