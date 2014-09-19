@@ -4,5 +4,6 @@ python:
 install:
     - ./demo-annotator/setup.sh
 script:
-    - source env/bin/activate ; cd demo-annotator ; sh run.sh
+    - export PEYOTL_CONFIG_FILE="${PWD}/config/peyotl.config"; source env/bin/activate ; cd demo-annotator ; sh run.sh
+
 
