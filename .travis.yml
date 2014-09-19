@@ -4,6 +4,10 @@ python:
 install:
     - ./demo-annotator/setup.sh
 script:
-    - export PEYOTL_CONFIG_FILE="${PWD}/config/peyotl.config"; source env/bin/activate ; cd demo-annotator ; sh run.sh
+    - export PEYOTL_LOGGING_LEVEL=debug ; \
+        export PEYOTL_CONFIG_FILE="${PWD}/config/peyotl.config"; \
+        source env/bin/activate ; \
+        cd demo-annotator ; \
+        sh run.sh
 
 
