@@ -1,0 +1,9 @@
+language: python
+python:
+    - "2.7"
+install:
+    - export NO_VIRT_ENV_INSTALL=1 ; ./demo-annotator/setup.sh
+script:
+    - export PEYOTL_LOGGING_LEVEL=debug ; export PEYOTL_CONFIG_FILE="${PWD}/config/peyotl.config"; echo $PEYOTL_CONFIG_FILE ; cat $PEYOTL_CONFIG_FILE ; source env/bin/activate ; cd demo-annotator ; sh run.sh
+
+
