@@ -8,7 +8,6 @@ import json
 import glob
 import argparse
 
-
 parser = argparse.ArgumentParser(description="Import files into couchdb")
 parser.add_argument('couchdb_url',help="location of the couch database")
 parser.add_argument('database_name',help="name of the database")
@@ -51,8 +50,9 @@ for doc in jsons:
     data = json.load(open(doc))
     uuid = uuids.pop()
     data['_id'] = uuid
-    #docid,docrev=db.save(data)
-    #print docid,docrev
+	# the save is what puts the doc into couch
+    docid,docrev=db.save(data)
+    print docid,docrev
 
 
 
