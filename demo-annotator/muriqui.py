@@ -392,7 +392,35 @@ class ReferenceTarget(object):
 class Entity(object):
     def __init__(self):
         self._name = ""
+        self._url = ""
+        self._description = ""
+        self._version = ""
+        self._invocation = None
         self._type = "prov:Entity"
+    @property
+    def url(self):
+        return self._url
+    @url.setter
+    def url(self, url):
+        self._url = url
+    @property
+    def description(self):
+        return self._description
+    @url.setter
+    def description(self, description):
+        self._description = description
+    @property
+    def version(self):
+        return self._version
+    @url.setter
+    def version(self, version):
+        self._version = version
+    @property
+    def invocation(self):
+        return self._invocation
+    @url.setter
+    def invocation(self, invocation):
+        self._invocation = invocation
     @property
     def name(self):
         return self._name
