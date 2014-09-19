@@ -493,6 +493,7 @@ class PhyloReferencedAnnotation(object):
 
     def to_json(self):
         return {
+            '_id': self._id,
             'oa:hasTarget': self.target.to_json(),
             'oa:annotatedBy': self.annotated_by.to_json(),
             'oa:annotatedAt': self.annotated_at,

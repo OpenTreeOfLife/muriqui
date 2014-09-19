@@ -8,12 +8,15 @@ if __name__ == "__main__":
 
     parser.add_argument("-l", "--label", nargs=1, required=True, help="The label to use for the output files.")
 
+    parser.add_argument("-n", "--ntax", nargs=1, type=int, required=True, help="The number of tips for the tree generator.")
+
     args = parser.parse_args()
     
     label = args.label[0]
+    ntax = args.ntax[0]
 
     # generate a random tree
-    tree = dendropy.simulate.birth_death_tree(birth_rate=0.1,death_rate=0,ntax=8)
+    tree = dendropy.simulate.birth_death_tree(birth_rate=0.1,death_rate=0,ntax=ntax)
 
     # for each internal node, generate a random annotation
     annotations = []
