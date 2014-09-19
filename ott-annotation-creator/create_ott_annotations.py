@@ -20,14 +20,14 @@ if __name__ == "__main__":
         sys.exit(0)
     tax_file = open(sys.argv[1],"r")
     tax_file.readline()
+    of = open("ott_taxonomy_annotations.json","w")
     for i in tax_file:
         spls = i.strip().split("\t|")
         uid = spls[0].strip()
         name = spls[2].strip()
         rank = spls[3].strip()
         x = encode_ott_json(uid,name,rank)
-        of = open(uid+".json","w")
         json.dump(x,of)
-        of.close()
-        break
+        of.write("\n")
+    of.close()
     tax_file.close()
