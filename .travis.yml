@@ -4,5 +4,5 @@ python:
 install:
     - ./demo-annotator/setup.sh
 script:
-    - cd demo-annotator ; sh run.sh
+    - source env/bin/activate ; cd demo-annotator ; sh run.sh
 
