@@ -223,7 +223,7 @@ def perform_check(tree, node_or_edge, check):
     return CheckOutcome(False, check)
     
 def add_phyloreferenced_annotation(tree, annotation):
-    #debug('Trying annotation {}'.format(annotation.annot_id))
+    #debug('Trying annotation {}'.format(annotation.id))
     print annotation.target.rooted_by
     if annotation.target.rooted_by == GroupType.BRANCH:
         r = find_stem_based_phylorefenced_annotation(tree, annotation)
@@ -241,7 +241,7 @@ def add_phyloreferenced_annotation(tree, annotation):
         check_result = perform_check(tree, r.attached_to, check)
         if not check_result.passed:
             r.add_failed_warning_check(check)
-    #debug('Adding annotation {a} to {e}'.format(a=annotation.annot_id, e=r.attached_to))
+    #debug('Adding annotation {a} to {e}'.format(a=annotation.id, e=r.attached_to))
     r.attached_to.phylo_ref.append(annotation)
     annotation.applied_to.append((tree, r.attached_to))
     assert r.reason_code == Reason.SUCCESS
@@ -400,12 +400,11 @@ class ReferenceTarget(object):
 class Entity(object):
     def __init__(self):
         self._name = ""
-        self._type = ""
+        self._type = "prov:Entity"
     
     @property
     def name(self):
         return self._name
-    
     @name.setter
     def name(self, name):
         self._name = name
@@ -414,15 +413,10 @@ class Entity(object):
     def type(self):
         return self._type
     
-    @name.setter
-    def type(self, type):
-        self._type = type
-    
     @classmethod
     def from_data(cls, data):
         e = cls()
         e.name = data["name"]
-        e.type = data["type"]
         return e
 
     def to_json(self):
@@ -430,6 +424,7 @@ class Entity(object):
             "type": self._type,
             "name": self._name,
         }
+        
 class PhyloReferencedAnnotation(object):
     def __init__(self):
         self._id = None # unique ID
@@ -440,10 +435,10 @@ class PhyloReferencedAnnotation(object):
         self._applied_to = []
 
     @property
-    def annot_id(self):
+    def id(self):
         return self._id
-    @annot_id.setter
-    def annot_id(self, id):
+    @id.setter
+    def id(self, id):
         self._id = id
 
     @property
@@ -603,7 +598,7 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
                 num_added += 1
             else:
                 unadded.append((a, response))
-                #debug('Annotation {a} could not be added to tree {t}'.format(a=a.annot_id, t=tree_index))
+                #debug('Annotation {a} could not be added to tree {t}'.format(a=a.id, t=tree_index))
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
         # Report tree and annotations
@@ -616,7 +611,7 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
                 l = '@' + str(id(node))
             if node.phylo_ref:
                 for a in node.phylo_ref:
-                    out_table_file_obj.write('node\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.annot_id))
+                    out_table_file_obj.write('node\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.id))
             e = node.edge
             if e:
                 p = e.tail_node
@@ -629,10 +624,10 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
                     pl = 'None'
                 if e.phylo_ref:
                     for a in e.phylo_ref:
-                        out_table_file_obj.write('edge\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.annot_id))
+                        out_table_file_obj.write('edge\t{n}\t{a}\n'.format(n=get_node_out_id(node), a=a.id))
         # Report unadded annotations
         for annotation, add_record in unadded:
-            out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.annot_id))
+            out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.id))
 
 
 if __name__ == '__main__':
