@@ -8,6 +8,7 @@ import datetime
 import json
 import os
 import random
+import shutil
 import string
 import sys
 import unittest
@@ -788,21 +789,88 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
         # Report unadded annotations
         for annotation, add_record in unadded:
             out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.id))
+    
+    return True
 
 class Tests(unittest.TestCase):
+
+    def setUp(self):
+        if os.path.exists("tests"):
+            shutil.rmtree("tests")
+        os.mkdir("tests")
+    
+    def tearDown(self):
+        shutil.rmtree("tests")
+        
     def test_simple_input(self):
         t="examples/canids.tre"
         a="examples/armadillo-annot.json" 
-        ot=open("examples/canids-out-tree.tre","w")
-        ob=open("examples/canids-out-table.tsv","w")
+        ot=open("tests/canids-out-tree.tre","w")
+        ob=open("tests/canids-out-table.tsv","w")
         self.failUnless(main(t, a, ot, ob))
-
+    
     def test_random_annotations_generator(self):
         n = 100
         for i in range(n):
             r = RandomAnnotation(i)
         self.failUnless(True)
+    
+    def test_random_annotations_on_tree(self):
 
+        ntax = random.randrange(2,100)
+        
+        for i in range(100):
+            tree = dendropy.simulate.birth_death_tree(birth_rate=0.1, death_rate=0, ntax=ntax)
+            tree_label = str(i)
+
+            # for each internal node, generate a random annotation
+            annotations = []
+            for j, n in enumerate(tree.internal_nodes()):
+                n.label = j
+
+                # generate the annotation, id matches the id applied to the node
+                a = RandomAnnotation(j)
+        
+                # set the target: include all ingroup, exclude all outgroup
+                a.target = ReferenceTarget.from_data({
+                    "type": "node",
+                    "included_ids": [l.taxon.label for l in n.leaf_nodes()]
+                })
+                node_leafset = set(n.leaf_nodes())
+                excluded = set()
+                for l in tree.leaf_nodes():
+                    if l not in node_leafset:
+                        excluded.add(l)
+                a.target.add_error_condition(CladeExcludesCheck(excluded))
+
+                annotations.append(a)
+
+            # write the tree to a file
+            test_tree_file = "tests/" + tree_label + ".input.tre"
+            with open(test_tree_file, "w") as treefile:
+                treefile.write(tree.as_string("newick"))
+ 
+            # write the annotations to a file
+            test_annotations_file = "tests/" + tree_label + ".input.annotations.json"
+            with open(test_annotations_file, "w") as datafile:
+                datafile.write("[\n")
+                first = True
+                for a in annotations:
+                    if not first:
+                        datafile.write(",\n")
+                    else:
+                        first = False
+                    datafile.write(a.summary)
+                datafile.write("\n]")
+
+            # call the main method to process the data
+            ot = open("tests/" + tree_label + ".output.tre", "w")
+            ob = open("tests/" + tree_label + ".output.table", "w")
+            main(test_tree_file, test_annotations_file, ot, ob)
+     
+            # check to see that the annotations were applied to the correct nodes (somehow)
+            self.failUnless(True)
+    
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser('demo of muriqui mapping annotations to a tree')
