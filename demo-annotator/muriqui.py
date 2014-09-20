@@ -770,7 +770,7 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
         # Report tree and annotations
-        tree.write(out_tree_file_obj, 'newick', node_label_compose_func=get_node_out_id)
+#        tree.write(out_tree_file_obj, 'newick', node_label_compose_func=get_node_out_id)
         out_table_file_obj.write('type\taddress\tannot-id\n')
         for node in tree.preorder_node_iter():
             if node.phylo_ref:
