@@ -11,6 +11,7 @@ import random
 import shutil
 import string
 import sys
+import time
 import unittest
 TAXOMACHINE = APIWrapper().taxomachine
 TREEMACHINE = APIWrapper().tree_of_life
@@ -718,6 +719,8 @@ class RandomAnnotation(PhyloReferencedAnnotation):
     
         if random_seed is not None:
             random.seed(random_seed)
+        else:
+            random.seed(time.clock()) 
 
         if use_utf8:
             self.get_random_string = self._get_random_string_utf8 
@@ -857,7 +860,7 @@ class RandomAnnotation(PhyloReferencedAnnotation):
             c = TargetExcludesCondition(*specifiers)
         return c
 
-def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_obj, use_taxonomy=True):
+def main(tree_filename, annotations_filename, out_tree_file_path, out_table_file_path, use_taxonomy=True):
     
     # get the trees
     if not os.path.exists(tree_filename):
@@ -885,10 +888,10 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
             tree.add_phyloreferenced_annotation(a)
 
         # report tree and annotations
-        tree.write_labeled_tree(out_tree_file_obj)
-        out_tree_file_obj.close()
-        tree.write_table(out_table_file_obj)
-        out_table_file_obj.close()
+        with open(out_tree_file_path,"w") as out_tree_file: 
+            tree.write_labeled_tree(out_tree_file)
+        with open(out_table_file_path,"w") as out_table_file:
+            tree.write_table(out_table_file)
 
 class Tests(unittest.TestCase):
 
@@ -912,14 +915,13 @@ class Tests(unittest.TestCase):
     def test_canid_data(self):
         t="examples/canids.tre"
         a="examples/armadillo-annot.json" 
-        ot=open("tests/canids-out-tree.tre","w")
-        out_table = "tests/canids-out-table.tsv"
-        ob=open(out_table,"w")
+        ot="tests/canids-out-tree.tre","w"
+        ob="tests/canids-out-table.tsv"
         
         main(t, a, ot, ob)
         
         out = []
-        with open(out_table) as outfile:
+        with open(ob) as outfile:
             for line in outfile:
                 p = line.split()
                 out.append((p[1],p[2]))
@@ -927,18 +929,64 @@ class Tests(unittest.TestCase):
         self.failUnless(out == (("target_id","annotation_id"),("770319","3"),("770319","4"), \
                 ("770319","5"),("770319","6"),("NA","1"),("NA","2")))
     
-    def test_random_annotations_generator(self):
-        n = 100
-        for i in range(n):
+    def test_roundtrip_100_ascii_annotations_n_times(self):
+        for i in range(100):
+            self.roundtrip_random_annotation_n_times(random.randrange(1,10), False)
+
+    def test_roundtrip_10_utf8_annotations_n_times(self):
+        for i in range(10):
+            self.roundtrip_random_annotation_n_times(random.randrange(1,10), True)
+    
+    def roundtrip_random_annotation_n_times(self, k, use_utf8=False):
         
-            r = RandomAnnotation(i)
-        self.failUnless(json.loads(r.summary))
+            # make a random annotation, and store it as json
+            r = RandomAnnotation(id=0, use_utf8=use_utf8)
+            x = json.loads(r.summary)
+            y = json.loads(r.summary)
+
+            # roundtrip the json the specified number of times
+            for i in range(k):
+                try:
+                    y = json.loads(PhyloReferencedAnnotation.from_data(y).summary)
+                except TypeError:
+                    print json.dumps(y)
+
+            debug("roundtripped " + str(k) + " times")
+            identical = Tests.compare_json(x,y)
+            if not identical:
+                debug("x:\n" + json.dumps(x))
+                debug("y:\n" + json.dumps(y))
+
+            # ensure that the result is identical
+            self.failUnless(identical)
+    
+    @staticmethod
+    def compare_json(x,y):
+        try:
+            assert type(x) == type(y)
+            if isinstance(x,str) or isinstance(x,int) or isinstance(x,float) or isinstance(x,unicode):
+                assert(x == y)
+            elif isinstance(x,dict):
+                assert x.keys() == y.keys()
+                for i in x:
+                    Tests.compare_json(x[i],y[i])
+            else: # list
+                assert len(x) == len(y)
+                x.sort()
+                y.sort()
+                for i in range(len(x)):
+                    Tests.compare_json(x[i],y[i])
+        except AssertionError:
+            return False
+        return True
+            
     
     def test_random_annotations_on_tree(self):
 
         ntax = random.randrange(2,100)
         
-        for i in range(100):
+        for i in range(10):
+            debug("generating annotations from tree " + str(i)) 
             tree = dendropy.simulate.birth_death_tree(birth_rate=0.1, death_rate=0, ntax=ntax)
             tree_label = str(i)
 
@@ -948,9 +996,9 @@ class Tests(unittest.TestCase):
                 n.label = j
 
                 # generate the annotation, id matches the id applied to the node
-                a = RandomAnnotation(j)
+                a = RandomAnnotation(id=j)
         
-                # set the target: include all ingroup, exclude all outgroup
+                # OVERWRITE the random target: include all ingroup, exclude all outgroup
                 a.target = ReferenceTarget.from_data({
                     "type": "node",
                     "included_ids": [l.taxon.label for l in n.leaf_nodes()]
@@ -960,7 +1008,7 @@ class Tests(unittest.TestCase):
                 for l in tree.leaf_nodes():
                     if l not in node_leafset:
                         excluded.add(l)
-                a.target.add_error_condition(TargetExcludesCondition(excluded))
+                a.target.add_error_condition(TargetExcludesCondition(*[s.taxon.label for s in excluded]))
 
                 annotations.append(a)
 
