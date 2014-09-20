@@ -224,11 +224,11 @@ def perform_check(tree, node_or_edge, check):
 
 def add_phyloreferenced_annotation(tree, annotation):
     #debug('Trying annotation {}'.format(annotation.id))
-    print annotation.target.rooted_by
-    if annotation.target.rooted_by == GroupType.BRANCH:
+    print annotation.target.type
+    if annotation.target.type == GroupType.BRANCH:
         r = find_stem_based_phylorefenced_annotation(tree, annotation)
     else:
-        assert annotation.target.rooted_by == GroupType.NODE
+        assert annotation.target.type == GroupType.NODE
         r = find_node_based_target(tree, annotation)
     if r.reason_code != Reason.SUCCESS:
         return r
@@ -336,17 +336,17 @@ def deserialize_check(from_json):
 
 class ReferenceTarget(object):
     def __init__(self, group_type):
-        self._rooted_by = GroupType.to_code(group_type)
+        self._type = GroupType.to_code(group_type)
         self._des = []
         self._exclude_ancs_of = []
         self._error_checks = []
         self._warning_checks = []
     @property
-    def rooted_by(self):
-        return self._rooted_by
-    @rooted_by.setter
-    def rooted_by(self, _type):
-        self._rooted_by = _type
+    def type(self):
+        return self._type
+    @type.setter
+    def type(self, _type):
+        self._type = _type
     @property
     def des(self):
         return self._des
@@ -383,7 +383,7 @@ class ReferenceTarget(object):
         return t
     def to_json(self):
         return {
-            "type": GroupType.to_str(self._rooted_by),
+            "type": GroupType.to_str(self._type),
             "included_ids": self._des,
             "excluded_ids": self._exclude_ancs_of,
             "error_checks": [x.to_json() for x in self._error_checks],
@@ -395,7 +395,7 @@ class Entity(object):
         self._url = ""
         self._description = ""
         self._version = ""
-        self._invocation = None
+        self._invocation = {}
         self._type = "prov:Entity"
     @property
     def url(self):
@@ -435,11 +435,14 @@ class Entity(object):
         e = cls()
         e.name = data["name"]
         return e
-
     def to_json(self):
         return {
             "type": self._type,
             "name": self._name,
+            "url": self._url,
+            "description": self._description,
+            "version": self._version,
+            "invocation": self._invocation,
         }
 class PhyloReferencedAnnotation(object):
     def __init__(self):
@@ -485,6 +488,9 @@ class PhyloReferencedAnnotation(object):
     @applied_to.setter
     def applied_to(self, applied_to):
         self._applied_to = applied_to
+    @property
+    def summary(self):
+        return json.dumps(self.to_json())
     @classmethod
     def from_data(cls, data):
         a = cls()
@@ -494,9 +500,6 @@ class PhyloReferencedAnnotation(object):
         a.annotated_by = Entity.from_data(data['oa:annotatedBy'])
         a.body = data['oa:hasBody']
         return a
-    @property
-    def summary(self):
-        return json.dumps(self.to_json())
     def to_json(self):
         return {
             '_id': self._id,
@@ -505,7 +508,6 @@ class PhyloReferencedAnnotation(object):
             'oa:annotatedAt': self.annotated_at,
             'oa:hasBody': self.body,
         }
-
 def all_numeric_taxa(tree_list):
     for tree in tree_list:
         for taxon in tree.taxon_namespace:

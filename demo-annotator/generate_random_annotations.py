@@ -1,12 +1,16 @@
-import argparse, os, random, string
+import argparse, datetime, os, random, string
 import muriqui as m
 from StringIO import StringIO
 
-MAX_ITEMS = 10
 MAX_FLOAT = 100000.0
-MAX_INT = 1000000000
-MAX_KEY_LENGTH = 10
+MAX_INT_VALUE = 1000000000
+
+MAX_ITEMS = 10
+MAX_KEY_LENGTH = 100
 MAX_STRING_LENGTH = 10
+MAX_TARGET_LENGTH = 100
+MAX_ERROR_CONDITIONS = 10
+MAX_WARNING_CONDITIONS = 10
 
 simple_string_chars = string.letters + string.digits + string.punctuation
 
@@ -38,24 +42,26 @@ def get_random_float():
     return random.random() * random.randrange(MAX_FLOAT)
 
 def get_random_int():
-    return random.randrange(MAX_INT)
+    return random.randrange(MAX_INT_VALUE)
 
-def get_random_value(depth):
+def get_random_value(depth=0):
 
     # halt deep recursion
     if depth > 8:
         return get_random_primitive()
+
+    depth += 1
         
     # generate containers infrequently
     r = random.randrange(8)
     if r == 0:
         value = []
         for i in range(random.randrange(MAX_ITEMS)):
-            value.append(get_random_value())
+            value.append(get_random_value(depth))
     elif r == 1:
         value = {}
         for i in range(random.randrange(MAX_ITEMS)):
-            value[get_random_string(MAX_KEY_LENGTH)] = get_random_value()
+            value[get_random_string(MAX_KEY_LENGTH)] = get_random_value(depth)
     else:
         # not a container, generate random primitive
         value = get_random_primitive()
@@ -74,13 +80,31 @@ def get_random_primitive():
 
     return value
 
-def get_random_body(number_of_elements):
+def get_random_object(number_of_elements):
     b = {}
     for i in range(number_of_elements):
         key = get_random_string(MAX_KEY_LENGTH)
         value = get_random_value()
         b[key] = value
     return b
+    
+def get_random_condition(included_specifiers):
+    i = random.randrange(2)
+    # MonophylyCheck
+    if i == 0: 
+        specifiers = set()
+        n = random.randrange(1,len(included_specifiers))
+        c = m.MonophylyCheck(*random.sample(included_specifiers,n))
+    # CladeExcludesCheck
+    elif i == 1:
+        specifiers = set()
+        n = random.randrange(1,MAX_TARGET_LENGTH)
+        while len(specifiers) < n:
+            r = random.randrange(MAX_INT_VALUE)
+            if r not in included_specifiers:
+                specifiers.add(r)
+        c = m.CladeExcludesCheck(*specifiers)
+    return c
 
 if __name__ == "__main__":
 
@@ -109,35 +133,53 @@ if __name__ == "__main__":
     annotations = []
     for i in range(count):
 
-        name = get_random_string(random.randrange(30))
-        body = get_random_body(random.randrange(2,10))
+        e = m.Entity()
+        e.name = get_random_string(random.randrange(30))
+        e.url = "http://"+get_random_string(random.randrange(100))
+        e.description = get_random_string(random.randrange(300))
+        e.version = get_random_string(random.randrange(20))
+        e.invocation = get_random_object(random.randrange(4))
 
         a = m.PhyloReferencedAnnotation()
         a.id = i
-        a.annotated_at = "datetime"
-        a.annotated_by = m.Entity.from_data({"name": name})
-        a.body = body
+        a.annotated_at = datetime.datetime.now().isoformat()
+        a.annotated_by = e
+        a.body = get_random_object(random.randrange(2,10))
                 
-        # set the target: generate random strings for ingroup
-        a.target = m.ReferenceTarget.from_data({
-            "type": "node",
-            "included_ids": []
-        })
+        # create a random reference type
+        a.target = m.ReferenceTarget(random.sample(["node","branch"],1)[0])
+
+        # generate random included ids        
+        included = set()
+        n_to_include = random.randrange(1,MAX_TARGET_LENGTH)
+        while len(included) < n_to_include:
+            included.add(random.randrange(MAX_INT_VALUE))
+
+        # generate random excluded ids (only for branch references)
+        if a.target.type == m.GroupType.BRANCH:
+            excluded = set()
+            n_to_exclude = random.randrange(MAX_TARGET_LENGTH)
+            while len(excluded) < n_to_exclude:
+                t = random.randrange(MAX_INT_VALUE)
+                if t not in included:
+                    excluded.add(t)
+            a.target.exclude_specifiers(excluded)
+
+        a.target.include_specifiers(included)
+
+        # add zero or more error checks
+        for i in range(random.randrange(MAX_ERROR_CONDITIONS)):
+            a.target.add_error_condition(get_random_condition(included))
         
-        print a.summary
-        exit()
-
-#        node_leafset = set(n.leaf_nodes())
-#        for l in tree.leaf_nodes():
-#            if l not in node_leafset:
-#                a.target.add_error_condition(m.CladeExcludesCheck(l.taxon.label))
-
+        # add zero or more warning checks
+        for i in range(random.randrange(MAX_WARNING_CONDITIONS)):
+            a.target.add_warning_condition(get_random_condition(included))
+        
+        print(a.summary)
+        
         annotations.append(a)
-    
-    # write the tree to a file
-    with open(label+".labeled.tre", "w") as treefile:
-        treefile.write(tree.as_string("newick"))
-    
+        exit()
+        
     # write the annotations to a file
     with open(label+".annotations.json", "w") as datafile:        
         for a in annotations:
