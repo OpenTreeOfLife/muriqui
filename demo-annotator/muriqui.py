@@ -930,6 +930,7 @@ class Tests(unittest.TestCase):
     def test_random_annotations_generator(self):
         n = 100
         for i in range(n):
+        
             r = RandomAnnotation(i)
         self.failUnless(json.loads(r.summary))
     
