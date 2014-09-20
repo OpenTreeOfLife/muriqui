@@ -4,7 +4,10 @@ from dendropy.utility import container
 from peyotl.api import APIWrapper
 from cStringIO import StringIO
 import codecs
+import datetime
 import json
+import random
+import string
 import sys
 import os
 TAXOMACHINE = APIWrapper().taxomachine
@@ -508,6 +511,162 @@ class PhyloReferencedAnnotation(object):
             'oa:annotatedAt': self.annotated_at,
             'oa:hasBody': self.body,
         }
+class RandomAnnotation(PhyloReferencedAnnotation):
+    def __init__(self, id, random_seed=None, use_utf8=False):
+    
+        if random_seed is not None:
+            random.seed(random_seed)
+
+        if use_utf8:
+            self.get_random_string = self._get_random_string_utf8 
+        else:
+            self.get_random_string = self._get_random_string_ascii
+
+        self.id = id
+
+        e = Entity()
+        e.name = self.get_random_string(random.randrange(30))
+        e.url = "http://"+self.get_random_string(random.randrange(100))
+        e.description = self.get_random_string(random.randrange(300))
+        e.version = self.get_random_string(random.randrange(20))
+        e.invocation = self._get_random_object(random.randrange(4))
+
+        self.annotated_at = datetime.datetime.now().isoformat()
+        self.annotated_by = e
+        self.body = self._get_random_object(random.randrange(2,10))
+            
+        # create a random reference type
+        self.target = ReferenceTarget(random.sample(["node","branch"],1)[0])
+
+        # generate random included ids        
+        included = set()
+        n_to_include = random.randrange(1,self.MAX_TARGET_LENGTH)
+        while len(included) < n_to_include:
+            included.add(random.randrange(self.MAX_INT_VALUE))
+
+        # generate random excluded ids (only for branch references)
+        if self.target.type == GroupType.BRANCH:
+            excluded = set()
+            n_to_exclude = random.randrange(self.MAX_TARGET_LENGTH)
+            while len(excluded) < n_to_exclude:
+                t = random.randrange(self.MAX_INT_VALUE)
+                if t not in included:
+                    excluded.add(t)
+            self.target.exclude_specifiers(excluded)
+
+        self.target.include_specifiers(included)
+
+        # add zero or more error checks
+        for i in range(random.randrange(self.MAX_ERROR_CONDITIONS)):
+            self.target.add_error_condition(self._get_random_condition(included))
+    
+        # add zero or more warning checks
+        for i in range(random.randrange(self.MAX_WARNING_CONDITIONS)):
+            self.target.add_warning_condition(self._get_random_condition(included))
+
+    MAX_FLOAT = 100000.0
+    MAX_INT_VALUE = 1000000000
+
+    MAX_ITEMS = 10
+    MAX_KEY_LENGTH = 100
+    MAX_STRING_LENGTH = 10
+    MAX_TARGET_LENGTH = 100
+    MAX_ERROR_CONDITIONS = 10
+    MAX_WARNING_CONDITIONS = 10
+
+    simple_string_chars = string.letters + string.digits + string.punctuation
+
+    def _get_random_string_utf8(self,length):
+        s = StringIO()
+        i = 0
+        while i < length:
+            try:
+                s.write(unicode(os.urandom(8), encoding='UTF-8'))
+                i += 1
+            except ValueError:
+                continue
+        return s.getvalue()
+
+    def _get_random_string_ascii(self,length):
+        s = StringIO()
+        i = 0
+        while i < length:
+            s.write(random.sample(self.simple_string_chars,1)[0])
+            i+=1
+        return s.getvalue()
+
+    def _get_random_float(self):
+        return random.random() * random.randrange(self.MAX_FLOAT)
+
+    def _get_random_int(self):
+        return random.randrange(self.MAX_INT_VALUE)
+
+    def _get_random_value(self, depth=0):
+
+        # halt deep recursion
+        if depth > 8:
+            return self._get_random_primitive()
+
+        depth += 1
+        
+        # generate containers infrequently
+        r = random.randrange(8)
+        if r == 0:
+            value = []
+            for i in range(random.randrange(self.MAX_ITEMS)):
+                value.append(self._get_random_value(depth))
+        elif r == 1:
+            value = {}
+            for i in range(random.randrange(self.MAX_ITEMS)):
+                value[self.get_random_string(self.MAX_KEY_LENGTH)] = self._get_random_value(depth)
+        else:
+            # not a container, generate random primitive
+            value = self._get_random_primitive()
+    
+        return value
+
+    def _get_random_primitive(self):
+
+        r = random.randrange(3)
+        if r == 0:
+            value = self.get_random_string(self.MAX_STRING_LENGTH)
+        elif r == 1:
+            value = self._get_random_float()
+        else:
+            value = self._get_random_int()
+
+        return value
+
+    def _get_random_object(self, number_of_elements):
+        b = {}
+        for i in range(number_of_elements):
+            key = self.get_random_string(self.MAX_KEY_LENGTH)
+            value = self._get_random_value()
+            b[key] = value
+        return b
+
+    def _get_random_condition(self, included_specifiers):
+        i = random.randrange(2)            
+        # MonophylyCheck
+        if i == 0: 
+            specifiers = set()
+            if len(included_specifiers) > 1: 
+                n = random.randrange(1,len(included_specifiers))
+            else:
+                n = 1
+            c = MonophylyCheck(*random.sample(included_specifiers,n))
+
+        # CladeExcludesCheck
+        elif i == 1:
+            specifiers = set()
+            n = random.randrange(1,self.MAX_TARGET_LENGTH)
+            while len(specifiers) < n:
+                r = random.randrange(self.MAX_INT_VALUE)
+                if r not in included_specifiers:
+                    specifiers.add(r)
+            c = CladeExcludesCheck(*specifiers)
+        return c
+        
 def all_numeric_taxa(tree_list):
     for tree in tree_list:
         for taxon in tree.taxon_namespace:
@@ -560,6 +719,7 @@ def get_node_out_id(node):
     UNNAMED_NODE_COUNT += 1
     node.label = l
     return l
+
 def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_obj):
     if not os.path.exists(tree_filename):
         raise ValueError('tree file "{}" does not exist'.format(tree_filename))
@@ -625,6 +785,16 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
         for annotation, add_record in unadded:
             out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.id))
 
+def simple_test():
+    t="examples/canids.tre"
+    a="examples/armadillo-annot.json" 
+    ot="examples/canids-out-tree.tre"
+    ob="examples/canids-out-table.tsv"
+    main(t, a, ot, ob)
+
+def generate_random_annotations_test():
+    for i in range(100):
+        r = RandomAnnotation(i)
 
 if __name__ == '__main__':
     import argparse
