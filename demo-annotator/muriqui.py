@@ -770,7 +770,7 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
             num_tried += 1
         debug('{a}/{t} annotations added to tree {i}'.format(a=num_added, t=num_tried, i=tree_index))
         # Report tree and annotations
-#        tree.write(out_tree_file_obj, 'newick', node_label_compose_func=get_node_out_id)
+        tree.write(out_tree_file_obj, 'newick', node_label_compose_func=get_node_out_id)
         out_table_file_obj.write('type\taddress\tannot-id\n')
         for node in tree.preorder_node_iter():
             if node.phylo_ref:
@@ -785,16 +785,21 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
         for annotation, add_record in unadded:
             out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.id))
 
-def simple_test():
+def simple_input_test():
+    print("processing example input")
     t="examples/canids.tre"
     a="examples/armadillo-annot.json" 
-    ot="examples/canids-out-tree.tre"
-    ob="examples/canids-out-table.tsv"
+    ot=open("examples/canids-out-tree.tre","w")
+    ob=open("examples/canids-out-table.tsv","w")
     main(t, a, ot, ob)
+    print("\tpassed")
 
 def generate_random_annotations_test():
-    for i in range(100):
+    n = 100
+    print("generating {} random annotations".format(n))
+    for i in range(n):
         r = RandomAnnotation(i)
+    print("\tpassed")
 
 if __name__ == '__main__':
     import argparse
