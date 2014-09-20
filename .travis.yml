@@ -4,6 +4,6 @@ python:
 install:
     - export NO_VIRT_ENV_INSTALL=1 ; ./demo-annotator/setup.sh
 script:
-    - source config/env.sh ; cd demo-annotator ; nosetests muriqui
+    - source config/env.sh ; cd demo-annotator ; nosetests -v muriqui
 
 

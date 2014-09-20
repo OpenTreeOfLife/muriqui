@@ -6,10 +6,11 @@ from cStringIO import StringIO
 import codecs
 import datetime
 import json
+import os
 import random
 import string
 import sys
-import os
+import unittest
 TAXOMACHINE = APIWrapper().taxomachine
 TREEMACHINE = APIWrapper().tree_of_life
 SCRIPT_NAME = os.path.split(sys.argv[0])[1]
@@ -150,8 +151,6 @@ class MappingOutcome(object):
             return 'Error check ({}) failed.'.format(self.failed_error_checks[0].explain())
         return 'Attaching the annotation to the tree failed ({})'.format(Reason.to_str(self.reason_code))
 
-
-
 def taxa_in_tree(tree, taxa_list, bits=False):
     t = []
     dropped = []
@@ -264,6 +263,7 @@ class GroupType(object):
         assert c.lower() == 'node'
         return GroupType.NODE
     to_code = staticmethod(to_code)
+
 class _CheckBase(object):
     pass
 def get_ott_ids_from_taxon_namespace(ns):
@@ -303,6 +303,7 @@ class MonophylyCheck(object):
         return True
     def to_json(self):
         return ["REQUIRE_MONOPHYLETIC",] + self.clade_list
+
 class CladeExcludesCheck(object):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
@@ -392,6 +393,7 @@ class ReferenceTarget(object):
             "error_checks": [x.to_json() for x in self._error_checks],
             "warning_checks": [x.to_json() for x in self._warning_checks],
         }
+        
 class Entity(object):
     def __init__(self):
         self._name = ""
@@ -447,6 +449,7 @@ class Entity(object):
             "version": self._version,
             "invocation": self._invocation,
         }
+        
 class PhyloReferencedAnnotation(object):
     def __init__(self):
         self._id = None # unique ID
@@ -511,6 +514,7 @@ class PhyloReferencedAnnotation(object):
             'oa:annotatedAt': self.annotated_at,
             'oa:hasBody': self.body,
         }
+        
 class RandomAnnotation(PhyloReferencedAnnotation):
     def __init__(self, id, random_seed=None, use_utf8=False):
     
@@ -785,21 +789,19 @@ def main(tree_filename, annotations_filename, out_tree_file_obj, out_table_file_
         for annotation, add_record in unadded:
             out_table_file_obj.write('NA\t\t{a}\n'.format(a=annotation.id))
 
-def simple_input_test():
-    print("processing example input")
-    t="examples/canids.tre"
-    a="examples/armadillo-annot.json" 
-    ot=open("examples/canids-out-tree.tre","w")
-    ob=open("examples/canids-out-table.tsv","w")
-    main(t, a, ot, ob)
-    print("\tpassed")
+class Tests(unittest.TestCase):
+    def test_simple_input(self):
+        t="examples/canids.tre"
+        a="examples/armadillo-annot.json" 
+        ot=open("examples/canids-out-tree.tre","w")
+        ob=open("examples/canids-out-table.tsv","w")
+        self.failUnless(main(t, a, ot, ob))
 
-def generate_random_annotations_test():
-    n = 100
-    print("generating {} random annotations".format(n))
-    for i in range(n):
-        r = RandomAnnotation(i)
-    print("\tpassed")
+    def test_random_annotations_generator(self):
+        n = 100
+        for i in range(n):
+            r = RandomAnnotation(i)
+        self.failUnless(True)
 
 if __name__ == '__main__':
     import argparse
