@@ -2,3 +2,5 @@
 *.pyc
 *~
 env
+*.annotations.json
+*.labeled.tre
