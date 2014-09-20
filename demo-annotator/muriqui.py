@@ -287,7 +287,8 @@ def expand_clade_using_ott(ott_id):
         id_list = [concat_taxon_label_to_ott_id(n)]
     _EXP_CACHE[ott_id] = id_list
     return id_list
-class MonophylyCheck(object):
+
+class MonophylyCheck(TargetCondition):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
     def explain(self):
@@ -305,7 +306,7 @@ class MonophylyCheck(object):
     def to_json(self):
         return ["REQUIRE_MONOPHYLETIC",] + self.clade_list
 
-class CladeExcludesCheck(object):
+class CladeExcludesCheck(TargetCondition):
     def __init__(self, *valist):
         self.clade_list = [str(i) for i in valist]
         self.failed = None
@@ -332,13 +333,23 @@ class CladeExcludesCheck(object):
     def to_json(self):
         return ['TARGET_EXCLUDES',] + self.clade_list
 
-_CHECK_CODE_TO_TYPE = {'REQUIRE_MONOPHYLETIC': MonophylyCheck,
-                       'TARGET_EXCLUDES': CladeExcludesCheck, }
-def deserialize_check(from_json):
-    type_code = from_json[0]
-    t = _CHECK_CODE_TO_TYPE[type_code]
-    return t(*from_json[1:])
+class TargetCondition(object):
 
+    _CODE_TO_TYPE = {
+        'REQUIRE_MONOPHYLETIC': MonophylyCheck,
+        'TARGET_EXCLUDES': CladeExcludesCheck,
+    }
+
+    @classmethod
+    def from_data(cls,data):
+        type_code = data[0]
+        t = cls.get_type_from_code[type_code]
+        return t(*from_json[1:])
+
+    @staticmethod
+    def get_type_from_code(code):
+        return TargetCondition._CODE_TO_TYPE[code]
+            
 class ReferenceTarget(object):
     def __init__(self, group_type):
         self._type = GroupType.to_code(group_type)
@@ -382,9 +393,9 @@ class ReferenceTarget(object):
         t.include_specifiers(data['included_ids'])
         t.exclude_specifiers(data.get('excluded_ids', []))
         for s in data.get('error_checks', []):
-            t.add_error_condition(deserialize_check(s))
+            t.add_error_condition(TargetCondition.from_data(s))
         for s in data.get('warning_checks', []):
-            t.add_warning_condition(deserialize_check(s))
+            t.add_warning_condition(TargetCondition.from_data(s))
         return t
     def to_json(self):
         return {
@@ -672,6 +683,11 @@ class RandomAnnotation(PhyloReferencedAnnotation):
             c = CladeExcludesCheck(*specifiers)
         return c
         
+        
+        
+        
+        
+        
 def all_numeric_taxa(tree_list):
     for tree in tree_list:
         for taxon in tree.taxon_namespace:
@@ -680,6 +696,7 @@ def all_numeric_taxa(tree_list):
             except:
                 return False
     return True
+
 def concat_taxon_label_to_ott_id(label, from_taxom=False):
     s = label.split('_')
     try:
@@ -711,6 +728,7 @@ def convert_taxon_labels_to_ott_id(tree_list):
             ott_id = concat_taxon_label_to_ott_id(taxon.label)
             taxon.label = ott_id
 UNNAMED_NODE_COUNT = 0
+
 def get_node_out_id(node):
     global UNNAMED_NODE_COUNT
     try:
@@ -813,7 +831,7 @@ class Tests(unittest.TestCase):
         n = 100
         for i in range(n):
             r = RandomAnnotation(i)
-        self.failUnless(True)
+        self.failUnless(json.loads(r.summary))
     
     def test_random_annotations_on_tree(self):
 
