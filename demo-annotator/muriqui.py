@@ -705,13 +705,14 @@ class RandomAnnotation(PhyloReferencedAnnotation):
     
     MAX_FLOAT_VALUE = 100000.0
     MAX_INT_VALUE = 1000000000
-    MAX_STRING_LENGTH = 100
+    MAX_STRING_LENGTH = 40
 
-    MAX_ITEMS = 10
-    MAX_KEY_LENGTH = 100
-    MAX_TARGET_LENGTH = 100
-    MAX_ERROR_CONDITIONS = 10
-    MAX_WARNING_CONDITIONS = 10
+    MAX_ITEMS = 5
+    MAX_DEPTH = 5
+    MAX_KEY_LENGTH = 40
+    MAX_TARGET_LENGTH = 40
+    MAX_ERROR_CONDITIONS = 5
+    MAX_WARNING_CONDITIONS = 5
 
     simple_string_chars = string.letters + string.digits + string.punctuation
 
@@ -797,7 +798,7 @@ class RandomAnnotation(PhyloReferencedAnnotation):
     def _get_random_value(self, depth=0):
 
         # halt deep recursion
-        if depth > 8:
+        if depth > MAX_DEPTH:
             return self._get_random_primitive()
 
         depth += 1
