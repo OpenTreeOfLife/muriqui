@@ -988,8 +988,8 @@ class Tests(unittest.TestCase):
         if not os.path.exists("tests"):
             os.mkdir("tests")
     
-#    def tearDown(self):
-#        shutil.rmtree("tests")
+    def tearDown(self):
+        shutil.rmtree("tests")
     
     def test_canid_data(self):
         t="examples/canids.tre"

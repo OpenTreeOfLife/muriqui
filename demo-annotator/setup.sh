@@ -19,6 +19,7 @@ then
     source env/bin/activate || exit
 fi
 
+pip install python-dateutil
 
 git clone https://github.com/jeetsukumaran/DendroPy.git || exit
 cd DendroPy
