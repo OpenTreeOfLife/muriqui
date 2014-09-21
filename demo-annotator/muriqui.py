@@ -1,11 +1,14 @@
 #!/usr/bin/env python
-import dendropy
+from copy import deepcopy as copy
+from datetime import datetime
 from dendropy.utility import container
 from peyotl.api import APIWrapper
 from cStringIO import StringIO
 import codecs
-import datetime
+import dateutil.parser
+import dendropy
 import json
+import math
 import os
 import random
 import shutil
@@ -393,18 +396,22 @@ class CheckOutcome(object):
         self.check = check
 
 class TargetType(object):
-    BRANCH, NODE = range(2)
+    BRANCH, NODE, UNDEFINED = range(3)
     def to_str(c):
         if c == TargetType.BRANCH:
             return 'branch'
-        assert c == TargetType.NODE
-        return 'node'
+        elif c == TargetType.NODE:
+            return 'node'
+        assert c == TargetType.UNDEFINED
+        return 'undefined'
     to_str = staticmethod(to_str)
     def to_code(c):
         if c.lower() == 'branch':
             return TargetType.BRANCH
-        assert c.lower() == 'node'
-        return TargetType.NODE
+        elif c.lower() == 'node':
+            return TargetType.NODE
+        assert c.lower() == 'undefined'
+        return TargetType.UNDEFINED
     to_code = staticmethod(to_code)
 
 class OTTNameConverter(object):
@@ -468,9 +475,7 @@ class MonophylyCondition(object):
     def passes(self, tree, node_or_edge):
         bitmask = 0
         for c in self.clade_list:
-#            expanded = expand_clade_using_ott(c)
             in_tree = tree.get_taxa_in_tree(c, bits=True)[0]
-#            in_tree = tree.taxa_in_tree(c, bits=True)[0]
             for x in in_tree:
                 bitmask |= x
         if (bitmask == 0) or (bitmask not in tree.split_edges):
@@ -494,9 +499,7 @@ class TargetExcludesCondition(object):
         except:
             edge = node_or_edge
         for c in self.clade_list:
-#            expanded = expand_clade_using_ott(c)
             in_tree = tree.get_taxa_in_tree(c, bits=True)[0]
-#            in_tree = tree.taxa_in_tree(c, bits=True)[0]
             exc_code = 0
             for t in in_tree:
                 exc_code |= t
@@ -516,6 +519,8 @@ class ReferenceCondition(object):
 
     @classmethod
     def from_data(cls,data):
+        if type(data) is not list:
+            raise ValueError("Cannot parse " + str(type(data)) + " as reference condition.")
         type_code = data[0]
         t = cls.get_type_from_code(type_code)
         return t(*data[1:])
@@ -525,8 +530,8 @@ class ReferenceCondition(object):
         return ReferenceCondition._CODE_TO_TYPE[code]
         
 class ReferenceTarget(object):
-    def __init__(self, group_type):
-        self._type = TargetType.to_code(group_type)
+    def __init__(self, target_type=TargetType.UNDEFINED):
+        self._type = target_type
         self._ids_to_include = []
         self._ids_to_exclude = []
         self._error_checks = []
@@ -536,6 +541,12 @@ class ReferenceTarget(object):
         return self._type
     @type.setter
     def type(self, _type):
+        try:
+            TargetType.to_str(target_type)
+        except AssertionError:
+            raise ValueError("target type must be a recognized value of the " \
+                    "TargetType class (currently 0, 1, or 2 for node, branch, and undefined " \
+                    "targets respectively).")
         self._type = _type
     @property
     def ids_to_include(self):
@@ -563,7 +574,13 @@ class ReferenceTarget(object):
         self._warning_checks.append(condition)
     @classmethod
     def from_data(cls, data):
-        t = cls(data['type'])
+        if type(data) is not dict:
+            raise ValueError("Cannot parse " + str(type(data)) + " as target.")
+        if "type" not in data:
+            raise ValueError("Cannot parse reference target without the 'type' property.")
+        t = cls(TargetType.to_code(data['type']))
+        if "included_ids" not in data:
+            raise ValueError("Cannot parse reference target without the 'included_ids' property.")
         t.include_specifiers(data['included_ids'])
         t.exclude_specifiers(data.get('excluded_ids', []))
         for s in data.get('error_checks', []):
@@ -579,7 +596,23 @@ class ReferenceTarget(object):
             "error_checks": [x.to_json() for x in self._error_checks],
             "warning_checks": [x.to_json() for x in self._warning_checks],
         }
-        
+
+def _validate_string(s, property):
+    if type(s) not in [str, unicode]:
+        raise ValueError("The '" + property + "' property must always be a string")
+
+def _validate_string_or_number(s, property):
+    if type(s) not in [str, unicode, int, float]:
+        raise ValueError("The '" + property + "' property must always be a string or a number")
+
+def _validate_string_or_int(s, property):
+    if type(s) not in [str, unicode, int]:
+        raise ValueError("The '" + property + "' property must always be a string or an integer")
+
+def _validate_dict(s, property):
+    if type(s) not in [dict,]:
+        raise ValueError("The '" + property + "' property must always be a dictionary (or JSON object)")
+
 class Entity(object):
     def __init__(self):
         self._name = ""
@@ -593,38 +626,51 @@ class Entity(object):
         return self._url
     @url.setter
     def url(self, url):
+        _validate_string(url,"url")
         self._url = url
     @property
     def description(self):
         return self._description
     @url.setter
     def description(self, description):
+        _validate_string(description,"description")
         self._description = description
     @property
     def version(self):
         return self._version
     @url.setter
     def version(self, version):
+        _validate_string_or_number(version,"version")
         self._version = version
     @property
     def invocation(self):
         return self._invocation
     @url.setter
     def invocation(self, invocation):
+        _validate_dict(invocation,"invocation")
         self._invocation = invocation
     @property
     def name(self):
         return self._name
     @name.setter
     def name(self, name):
+        _validate_string(name,"name")
         self._name = name
     @property
     def type(self):
         return self._type
     @classmethod
     def from_data(cls, data):
+        if type(data) is not dict:
+            raise ValueError("Cannot parse " + str(type(data)) + " as entity.")
         e = cls()
+        if "name" not in data:
+            raise ValueError("The entity must have a name.")
         e.name = data["name"]
+        e.url = data["url"] if "url" in data else ""
+        e.description = data["description"] if "description" in data else ""
+        e.version = data["version"] if "version" in data else ""
+        e.invocation = data["invocation"] if "invocation" in data else {}
         return e
     def to_json(self):
         return {
@@ -636,57 +682,83 @@ class Entity(object):
             "invocation": self._invocation,
         }
         
-class PhyloReferencedAnnotation(object):
-    def __init__(self):
-        self._id = None # unique ID
-        self._target = None
-        self._annotated_at = ""
-        self._annotated_by = None
-        self._body = None
+class Annotation(object):
+    def __init__(self, id):
+        _validate_string_or_int(id,"_id")
+        self._id = id # should be unique within the used context
         self._applied_to = []
+        self._target = ReferenceTarget()
+        self._annotated_at = datetime.now().isoformat()
+        self._annotated_by = Entity()
+        self._body = {}
     @property
     def id(self):
         return self._id
     @id.setter
-    def id(self, _id):
-        self._id = _id
+    def id(self, id):
+        _validate_string_or_int(id,"_id")
+        self._id = id
     @property
     def target(self):
         return self._target
     @target.setter
     def target(self, target):
+        if type(target) is not ReferenceTarget:
+            raise ValueError("The oa:hasTarget field may only contain ReferenceTarget objects.")
         self._target = target
     @property
     def annotated_at(self):
         return self._annotated_at
     @annotated_at.setter
-    def annotated_at(self, datetime):
-        self._annotated_at = datetime
+    def annotated_at(self, datetime_str):
+        try:
+            x = dateutil.parser.parse(datetime_str)
+        except:
+            raise ValueError("could not parse the datetime string '" + \
+                    str(datetime_str) + "'. The oa:annotatedAt field must contain a " + \
+                    "datetime string which should be of the format: " + \
+                    datetime.now().isoformat())
+        self._annotated_at = x.isoformat()
     @property
     def annotated_by(self):
         return self._annotated_by
     @annotated_by.setter
     def annotated_by(self, entity):
+        if type(entity) is not Entity:
+            raise ValueError("The oa:annotatedBy field may only contain Entity objects.")
         self._annotated_by = entity
     @property
     def body(self):
         return self._body
     @body.setter
     def body(self, body):
+        try:
+            json.dumps(body)
+        except TypeError:
+            raise ValueError("could not serialize the value of '" + \
+                    str(body) + "' to JSON. The body of an annotation must " \
+                    "be JSON-serializable.")
         self._body = body
     @property
     def applied_to(self):
         return self._applied_to
     @applied_to.setter
-    def applied_to(self, applied_to):
+    def applied_to(self,applied_to):
         self._applied_to = applied_to
     @property
     def summary(self):
         return json.dumps(self.to_json())
     @classmethod
     def from_data(cls, data):
-        a = cls()
-        a.id = data['_id']
+        if type(data) is not dict:
+            raise ValueError("Cannot parse " + str(type(data)) + " as entity.")
+        if not '_id' in data:
+            raise ValueError("the annotation must have an _id field.")
+        a = cls(data['_id'])
+        for x in cls.required_properties:
+            if x not in data:
+                raise ValueError("the annotation must contain the properties: " + \
+                        ",".join(cls.required_properties))                        
         a.target = ReferenceTarget.from_data(data['oa:hasTarget'])
         a.annotated_at = data['oa:annotatedAt']
         a.annotated_by = Entity.from_data(data['oa:annotatedBy'])
@@ -700,8 +772,9 @@ class PhyloReferencedAnnotation(object):
             'oa:annotatedAt': self.annotated_at,
             'oa:hasBody': self.body,
         }
+    required_properties = ["oa:hasTarget","oa:annotatedBy","oa:hasBody","oa:annotatedAt"]
         
-class RandomAnnotation(PhyloReferencedAnnotation):
+class RandomAnnotation(Annotation):
     
     MAX_FLOAT_VALUE = 100000.0
     MAX_INT_VALUE = 1000000000
@@ -720,8 +793,6 @@ class RandomAnnotation(PhyloReferencedAnnotation):
     
         if random_seed is not None:
             random.seed(random_seed)
-        else:
-            random.seed(time.clock()) 
 
         if use_utf8:
             self.get_random_string = self._get_random_string_utf8 
@@ -737,12 +808,12 @@ class RandomAnnotation(PhyloReferencedAnnotation):
         e.version = self.get_random_string(random.randrange(20))
         e.invocation = self._get_random_object(random.randrange(4))
 
-        self.annotated_at = datetime.datetime.now().isoformat()
+        self.annotated_at = datetime.now().isoformat()
         self.annotated_by = e
         self.body = self._get_random_object(random.randrange(2,10))
             
         # create a random reference type
-        self.target = ReferenceTarget(random.sample(["node","branch"],1)[0])
+        self.target = ReferenceTarget(random.sample([TargetType.NODE,TargetType.BRANCH],1)[0])
 
         # generate random included ids        
         included = set()
@@ -798,7 +869,7 @@ class RandomAnnotation(PhyloReferencedAnnotation):
     def _get_random_value(self, depth=0):
 
         # halt deep recursion
-        if depth > MAX_DEPTH:
+        if depth > self.MAX_DEPTH:
             return self._get_random_primitive()
 
         depth += 1
@@ -879,7 +950,7 @@ def main(tree_filename, annotations_filename, out_tree_file_path, out_table_file
         annot_list = [annot_list]
     annotations = []
     for a in annot_list:
-        annotations.append(PhyloReferencedAnnotation.from_data(a))
+        annotations.append(Annotation.from_data(a))
 
     # annotate the trees
     for tree_index, t in enumerate(tree_list):
@@ -902,21 +973,11 @@ class Tests(unittest.TestCase):
     
 #    def tearDown(self):
 #        shutil.rmtree("tests")
-        
-    def test_taxon_expansion(self):
-        pass
-        # test whether taxon id expansion is behaving itself
-    
-    def test_node_based_expansion(self):
-        pass
-    
-    def test_branch_based_expansion(self):
-        pass
     
     def test_canid_data(self):
         t="examples/canids.tre"
         a="examples/armadillo-annot.json" 
-        ot="tests/canids-out-tree.tre","w"
+        ot="tests/canids-out-tree.tre"
         ob="tests/canids-out-table.tsv"
         
         main(t, a, ot, ob)
@@ -947,10 +1008,7 @@ class Tests(unittest.TestCase):
 
             # roundtrip the json the specified number of times
             for i in range(k):
-                try:
-                    y = json.loads(PhyloReferencedAnnotation.from_data(y).summary)
-                except TypeError:
-                    print json.dumps(y)
+                y = json.loads(Annotation.from_data(y).summary)
 
             debug("roundtripped " + str(k) + " times")
             identical = Tests.compare_json(x,y)
@@ -980,9 +1038,181 @@ class Tests(unittest.TestCase):
         except AssertionError:
             return False
         return True
-            
+
+    def test_good_value_annotated_at(self):
+        a = Annotation(0)
+        for i in range(300):
+            x = time.time()
+            d = datetime.fromtimestamp(x - random.randrange(math.floor(x)))
+            a.annotated_at = d.isoformat()
+            self.failUnless(d.isoformat() == a.annotated_at)
     
-    def test_random_annotations_on_tree(self):
+    def test_bad_value_annotated_at(self):
+        a = Annotation(0)
+        a.annotated_at = datetime.now().isoformat()
+
+        x = RandomAnnotation(id=0)
+        for i in range(300):
+            try:
+                a.annotated_at = x._get_random_string_ascii(random.randrange(20))
+            except ValueError:
+                pass
+            self.failUnless(dateutil.parser.parse(a.annotated_at))
+
+        for i in range(300):
+            try:
+                a.annotated_at = x._get_random_string_utf8(random.randrange(20))
+            except ValueError:
+                pass
+            self.failUnless(dateutil.parser.parse(a.annotated_at))
+
+        for x in self._not_string:
+            try:
+                a.annotated_at = x
+            except ValueError:
+                pass
+            self.failUnless(dateutil.parser.parse(a.annotated_at))
+
+    def test_bad_value_body(self):
+        a = Annotation(0)
+        for x in [TargetType,set(),datetime]:
+            try:
+                a.body = x
+            except ValueError:
+                pass
+            self.failUnless(json.dumps(a.body))
+
+    def test_bad_value_entity(self):
+        a = Annotation(0)
+        for x in self._not_anything_normal:
+            try:
+                a.annotated_by = x
+            except ValueError:
+                pass
+            self.failUnless(json.dumps(a.annotated_by.to_json()))
+    
+    def NEED_bad_value_reference_condition(self):
+        # should be a list with a string as the first element
+        pass
+    
+    _not_anything_normal = [None,[],False,True,1,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
+    _not_string = [None,[],False,True,1,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
+    _not_string_int = [None,[],False,True,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
+    _not_dict = ["",None,[],False,True,1,1.0,set(),RandomAnnotation(id=0),datetime,TargetType]
+    _not_generic = ["",None,[],False,True,1,1.0,set(),{}]
+
+    def _test_values_against_type(self, d, properties, obj_type, bad_values):
+        for x in properties:
+            for y in bad_values:
+                d[x] = y
+                e = None
+                try:
+                    e = obj_type.from_data(d)
+                except ValueError:
+                    pass
+                self.failUnless(e == None)
+    
+    def test_malformed_entity_from_data(self):
+        original = Entity().to_json()
+        e = None
+
+        # try to pass bad types to data constructor
+        for x in self._not_dict:
+            try:
+                e = Entity.from_data(x)
+            except ValueError:
+                pass
+            self.failUnless(e == None)
+        
+        # try without name (required)
+        d = copy(original)
+        del(d["name"])
+        try:
+            e = Entity.from_data(d)
+        except ValueError:
+            pass
+        self.failUnless(e == None)
+        
+        # test various unacceptable values
+        self._test_values_against_type(original, ["name","description","url"], Entity, self._not_string)
+        self._test_values_against_type(original, ["version"], Entity, self._not_string_int)
+        self._test_values_against_type(original, ["invocation"], Entity, self._not_dict)
+
+    def test_malformed_target_from_data(self):
+        original = ReferenceTarget().to_json()
+        t = None
+
+        # try to pass bad types to data constructor
+        for x in self._not_dict:
+            try:
+                t = ReferenceTarget.from_data(x)
+            except ValueError:
+                pass
+            self.failUnless(t == None)
+
+        # try without included_ids (required)
+        d = copy(original)
+        del(d["included_ids"])
+        try:
+            t = ReferenceTarget.from_data(d)
+        except ValueError:
+            pass
+        self.failUnless(t == None)
+
+        # need to test if properties are not lists/etc
+    
+    def test_malformed_annotation_from_data(self):
+        original = Annotation(id=0).to_json()
+        a = None
+        
+        # try to pass bad types to data constructor
+        for x in self._not_dict:
+            try:
+                a = Annotation.from_data(x)
+            except ValueError:
+                pass
+            self.failUnless(a == None)
+        
+        for x in ["oa:hasBody","oa:hasTarget","oa:annotatedAt","oa:annotatedBy"]:
+            d = copy(original)
+            del(d[x])
+            try:
+                a = Annotation.from_data(d)
+            except ValueError:
+                pass
+            self.failUnless(a == None)
+
+        self._test_values_against_type(original, ["oa:hasTarget","oa:annotatedBy"], \
+                Annotation, self._not_generic)
+        self._test_values_against_type(original, ["oa:hasBody"], Annotation, self._not_dict)
+        self._test_values_against_type(original, ["oa:annotatedAt"], Annotation, self._not_string)
+
+    def test_malformed_reference_condition_from_data(self):
+        # bad json structure
+        pass
+
+    def NEED_inconsisent_target_from_data(self):
+        # this is for an inconsistent target
+        # - overlap between included/excluded ids
+        pass
+
+    def NEED_inconsistent_reference_condition(self):
+        # not sure whether this makes sense or should be combined with inconsistent target
+        pass
+
+    # tests below here are less relavant because it's unlikely 
+    # this python code will be used to actually annotate trees
+    def DEACTIVATED_taxon_expansion(self):
+        pass
+
+    def DEACTIVATED_node_based_expansion(self):
+        pass
+    
+    def DEACTIVATED_branch_based_expansion(self):
+        pass
+
+#    def test_random_annotations_on_tree(self):
+    def DEACTIVATED_random_annotations_on_tree(self):
 
         ntax = random.randrange(2,100)
         
@@ -1032,12 +1262,20 @@ class Tests(unittest.TestCase):
                 datafile.write("\n]")
 
             # call the main method to process the data
-            ot = open("tests/" + tree_label + ".output.tre", "w")
-            ob = open("tests/" + tree_label + ".output.table", "w")
+            ot = "tests/" + tree_label + ".output.tre"
+            ob = "tests/" + tree_label + ".output.table"
             main(test_tree_file, test_annotations_file, ot, ob, False)
      
-            # check to see that the annotations were applied to the correct nodes (somehow)
-            self.failUnless(True)
+            # check to see that the annotations were applied to the correct nodes
+            with open(test_annotations_file) as out_table:
+                first = True
+                for line in out_table:
+                    if first:
+                        first = False
+                        continue
+                    else:
+                        parts = line.split()
+                        self.failUnless(parts[1] == parts[2])
     
 if __name__ == '__main__':
     import argparse
@@ -1062,8 +1300,8 @@ if __name__ == '__main__':
     parser.add_argument('json', help='filepath to JSON file with annotations')
     args = parser.parse_args()
     annotations_file = args.json
-    o_tree = open(args.out_tree, 'w')
-    o_table = open(args.out_table, 'w')
+    o_tree = args.out_tree
+    o_table = args.out_table
 
     if args.tree_file is not None:
         tree_file = args.tree_file
