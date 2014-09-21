@@ -398,20 +398,27 @@ class CheckOutcome(object):
 class TargetType(object):
     BRANCH, NODE, UNDEFINED = range(3)
     def to_str(c):
+        _validate_int(c,"type")
         if c == TargetType.BRANCH:
             return 'branch'
         elif c == TargetType.NODE:
             return 'node'
-        assert c == TargetType.UNDEFINED
-        return 'undefined'
+        elif c == TargetType.UNDEFINED:
+            return 'undefined'
+        else:
+            raise AssertionError("The value '" + str(c) + "' is invalid.")
     to_str = staticmethod(to_str)
     def to_code(c):
+        _validate_string(c,"type")
         if c.lower() == 'branch':
             return TargetType.BRANCH
         elif c.lower() == 'node':
             return TargetType.NODE
-        assert c.lower() == 'undefined'
-        return TargetType.UNDEFINED
+        elif c.lower() == 'undefined':
+            return TargetType.UNDEFINED
+        else:
+            raise ValueError("The value '" + str(c) + "' does not correspond to a known " \
+                    "type. Target type may only be 'node', 'branch', or 'undefined'.")
     to_code = staticmethod(to_code)
 
 class OTTNameConverter(object):
@@ -540,14 +547,9 @@ class ReferenceTarget(object):
     def type(self):
         return self._type
     @type.setter
-    def type(self, _type):
-        try:
-            TargetType.to_str(target_type)
-        except AssertionError:
-            raise ValueError("target type must be a recognized value of the " \
-                    "TargetType class (currently 0, 1, or 2 for node, branch, and undefined " \
-                    "targets respectively).")
-        self._type = _type
+    def type(self, type):
+        TargetType.to_str(type)
+        self._type = type
     @property
     def ids_to_include(self):
         return self._ids_to_include
@@ -581,10 +583,17 @@ class ReferenceTarget(object):
         t = cls(TargetType.to_code(data['type']))
         if "included_ids" not in data:
             raise ValueError("Cannot parse reference target without the 'included_ids' property.")
+        _validate_list(data['included_ids'],"included_ids")
         t.include_specifiers(data['included_ids'])
-        t.exclude_specifiers(data.get('excluded_ids', []))
+        x = data.get('excluded_ids', [])
+        _validate_list(x,'excluded_ids')
+        t.exclude_specifiers(x)
+        x = data.get('error_checks', [])
+        _validate_list(x,'error_checks')
         for s in data.get('error_checks', []):
             t.add_error_condition(ReferenceCondition.from_data(s))
+        x = data.get('warning_checks', [])
+        _validate_list(x,'warning_checks')
         for s in data.get('warning_checks', []):
             t.add_warning_condition(ReferenceCondition.from_data(s))
         return t
@@ -596,6 +605,10 @@ class ReferenceTarget(object):
             "error_checks": [x.to_json() for x in self._error_checks],
             "warning_checks": [x.to_json() for x in self._warning_checks],
         }
+
+def _validate_int(s, property):
+    if type(s) not in [int, long]:
+        raise ValueError("The '" + property + "' property must always be an integer")
 
 def _validate_string(s, property):
     if type(s) not in [str, unicode]:
@@ -612,6 +625,10 @@ def _validate_string_or_int(s, property):
 def _validate_dict(s, property):
     if type(s) not in [dict,]:
         raise ValueError("The '" + property + "' property must always be a dictionary (or JSON object)")
+
+def _validate_list(s, property):
+    if type(s) not in [list,]:
+        raise ValueError("The '" + property + "' property must always be a list")
 
 class Entity(object):
     def __init__(self):
@@ -1095,11 +1112,13 @@ class Tests(unittest.TestCase):
         # should be a list with a string as the first element
         pass
     
-    _not_anything_normal = [None,[],False,True,1,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
+    _not_anything_normal = ["fdsa afdjd","",None,[],False,True,1,1.0,set(), \
+            {},RandomAnnotation(id=0),datetime,TargetType]
+    _not_list = ["sbsd as","",None,False,True,1,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
+    _not_dict = ["sbsd as","",None,[],False,True,1,1.0,set(),RandomAnnotation(id=0),datetime,TargetType]
+    _not_specific_object = ["DF sdaf","",None,[],False,True,1,1.0,set(),{}]
     _not_string = [None,[],False,True,1,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
     _not_string_int = [None,[],False,True,1.0,set(),{},RandomAnnotation(id=0),datetime,TargetType]
-    _not_dict = ["",None,[],False,True,1,1.0,set(),RandomAnnotation(id=0),datetime,TargetType]
-    _not_generic = ["",None,[],False,True,1,1.0,set(),{}]
 
     def _test_values_against_type(self, d, properties, obj_type, bad_values):
         for x in properties:
@@ -1150,6 +1169,7 @@ class Tests(unittest.TestCase):
                 pass
             self.failUnless(t == None)
 
+
         # try without included_ids (required)
         d = copy(original)
         del(d["included_ids"])
@@ -1159,7 +1179,19 @@ class Tests(unittest.TestCase):
             pass
         self.failUnless(t == None)
 
-        # need to test if properties are not lists/etc
+        # try unrecognized target types
+        d = copy(original)
+        for x in [None,-1,"1",44,True,False,[],{},-99,10000000000000]:
+            d["type"] = x
+            try:
+                t = ReferenceTarget.from_data(d)
+            except ValueError:
+                pass
+            self.failUnless(t == None)
+
+        self._test_values_against_type(original, \
+                ["included_ids","excluded_ids", "error_checks","warning_checks"], \
+                ReferenceTarget, self._not_list)
     
     def test_malformed_annotation_from_data(self):
         original = Annotation(id=0).to_json()
@@ -1183,7 +1215,7 @@ class Tests(unittest.TestCase):
             self.failUnless(a == None)
 
         self._test_values_against_type(original, ["oa:hasTarget","oa:annotatedBy"], \
-                Annotation, self._not_generic)
+                Annotation, self._not_specific_object)
         self._test_values_against_type(original, ["oa:hasBody"], Annotation, self._not_dict)
         self._test_values_against_type(original, ["oa:annotatedAt"], Annotation, self._not_string)
 
